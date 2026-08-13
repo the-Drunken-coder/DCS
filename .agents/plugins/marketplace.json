@@ -1,0 +1,20 @@
+{
+  "name": "dcs",
+  "interface": {
+    "displayName": "Drunken Coding Skills"
+  },
+  "plugins": [
+    {
+      "name": "dcs",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

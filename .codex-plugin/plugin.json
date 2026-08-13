@@ -1,0 +1,18 @@
+{
+  "name": "dcs",
+  "version": "0.1.0",
+  "description": "A deliberately small collection of personal Codex skills.",
+  "author": {
+    "name": "The Drunken Coder"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "DCS",
+    "shortDescription": "Drunken Coding Skills for Codex.",
+    "longDescription": "A deliberately small, personal library of Codex skills.",
+    "developerName": "The Drunken Coder",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Show me the skills available from DCS."
+  }
+}
