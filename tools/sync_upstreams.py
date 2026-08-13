@@ -19,6 +19,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "upstreams.json"
+UPSTREAM_LOCK = ROOT / "upstreams.lock.json"
 PLUGIN_MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
 SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -36,6 +37,9 @@ class Upstream:
     ref: str
     path: PurePosixPath
     destination: PurePosixPath
+    adapter: str | None
+    overlay: PurePosixPath | None
+    patch: PurePosixPath | None
 
     @property
     def source(self) -> str:
@@ -46,6 +50,7 @@ class Upstream:
 class Result:
     upstream: Upstream
     commit: str
+    tree: str
     changes: tuple[str, ...]
 
 
@@ -77,9 +82,10 @@ def load_registry(path: Path) -> list[Upstream]:
     names: set[str] = set()
     for index, raw in enumerate(data["skills"]):
         label = f"skills[{index}]"
-        fields = {"name", "repository", "ref", "path", "destination"}
-        if not isinstance(raw, dict) or set(raw) != fields:
-            raise SyncError(f"{label} must contain exactly: {', '.join(sorted(fields))}")
+        required = {"name", "repository", "ref", "path", "destination"}
+        optional = {"adapter", "overlay", "patch"}
+        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - optional:
+            raise SyncError(f"{label} must contain required fields and only supported adapter fields")
 
         name = raw["name"]
         repository = raw["repository"]
@@ -93,14 +99,47 @@ def load_registry(path: Path) -> list[Upstream]:
 
         source_path = relative_path(raw["path"], f"{label}.path")
         destination = relative_path(raw["destination"], f"{label}.destination")
+        adapter = raw.get("adapter")
+        if adapter not in {None, "cursor-manual-only"}:
+            raise SyncError(f"{label}.adapter is not supported")
+        overlay = relative_path(raw["overlay"], f"{label}.overlay") if "overlay" in raw else None
+        patch = relative_path(raw["patch"], f"{label}.patch") if "patch" in raw else None
+        if overlay and overlay.parts[0] != "ports":
+            raise SyncError(f"{label}.overlay must live under ports/")
+        if patch and (patch.parts[0] != "ports" or patch.suffix != ".patch"):
+            raise SyncError(f"{label}.patch must be a .patch file under ports/")
         if destination != PurePosixPath("skills") / name:
             raise SyncError(f"{label}.destination must be skills/{name}")
         if name in names:
             raise SyncError(f"{label}.name is duplicated")
 
         names.add(name)
-        upstreams.append(Upstream(name, repository, ref, source_path, destination))
+        upstreams.append(Upstream(name, repository, ref, source_path, destination, adapter, overlay, patch))
     return upstreams
+
+
+def load_lock(path: Path | None = None, required: bool = True) -> dict[str, str]:
+    path = path or UPSTREAM_LOCK
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        if required:
+            raise SyncError(f"missing upstream lock: {path}")
+        return {}
+    except (OSError, json.JSONDecodeError) as error:
+        raise SyncError(f"cannot read {path}: {error}") from error
+    skills = data.get("skills") if isinstance(data, dict) and data.get("schemaVersion") == 1 else None
+    if not isinstance(skills, dict) or any(
+        not isinstance(name, str) or not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree)
+        for name, tree in skills.items()
+    ):
+        raise SyncError("upstreams.lock.json must contain skill names mapped to Git tree hashes")
+    return skills
+
+
+def write_lock(trees: dict[str, str], path: Path | None = None) -> None:
+    path = path or UPSTREAM_LOCK
+    path.write_text(json.dumps({"schemaVersion": 1, "skills": trees}, indent=2) + "\n", encoding="utf-8")
 
 
 def git(*arguments: str, cwd: Path | None = None) -> str:
@@ -150,7 +189,7 @@ def validate_skill(directory: Path, expected_name: str) -> None:
         raise SyncError(f"{skill_file} must have a description")
 
 
-def checkout(upstream: Upstream, parent: Path) -> tuple[Path, str]:
+def checkout(upstream: Upstream, parent: Path) -> tuple[Path, str, str]:
     checkout_root = parent / upstream.name
     url = f"https://github.com/{upstream.repository}.git"
     git(
@@ -170,7 +209,55 @@ def checkout(upstream: Upstream, parent: Path) -> tuple[Path, str]:
         raise SyncError(f"{upstream.source} is not a safe directory")
     reject_symlinks(source)
     validate_skill(source, upstream.name)
-    return source, git("rev-parse", "HEAD", cwd=checkout_root)
+    commit = git("rev-parse", "HEAD", cwd=checkout_root)
+    tree = git("rev-parse", f"HEAD:{upstream.path}", cwd=checkout_root)
+    return source, commit, tree
+
+
+def apply_port_patch(candidate: Path, patch: Path) -> None:
+    process = subprocess.run(
+        ["patch", "--posix", "-s", "-f", "-p1", "-d", str(candidate), "-i", str(patch)],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if process.returncode:
+        detail = process.stderr.strip() or process.stdout.strip()
+        raise SyncError(f"cannot apply {patch.relative_to(ROOT)}: {detail}")
+
+
+def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
+    shutil.copytree(source, candidate)
+    if upstream.adapter == "cursor-manual-only":
+        skill_file = candidate / "SKILL.md"
+        lines = skill_file.read_text(encoding="utf-8").splitlines(keepends=True)
+        try:
+            frontmatter_end = next(index for index, line in enumerate(lines[1:], 1) if line.strip() == "---")
+        except StopIteration as error:
+            raise SyncError(f"{upstream.source} has unterminated YAML frontmatter") from error
+        marker = [
+            index
+            for index, line in enumerate(lines[1:frontmatter_end], 1)
+            if line.strip() == "disable-model-invocation: true"
+        ]
+        if len(marker) != 1:
+            raise SyncError(f"{upstream.source} must contain one disable-model-invocation: true marker")
+        del lines[marker[0]]
+        skill_file.write_text("".join(lines), encoding="utf-8")
+    if upstream.patch:
+        patch = ROOT.joinpath(*upstream.patch.parts).resolve()
+        if not patch.is_file() or not patch.is_relative_to(ROOT.resolve()):
+            raise SyncError(f"missing or unsafe port patch: {upstream.patch}")
+        apply_port_patch(candidate, patch)
+    if upstream.overlay:
+        overlay = ROOT.joinpath(*upstream.overlay.parts).resolve()
+        if not overlay.is_dir() or not overlay.is_relative_to(ROOT.resolve()):
+            raise SyncError(f"missing or unsafe port overlay: {upstream.overlay}")
+        reject_symlinks(overlay)
+        shutil.copytree(overlay, candidate, dirs_exist_ok=True)
+    reject_symlinks(candidate)
+    validate_skill(candidate, upstream.name)
 
 
 def snapshot(root: Path) -> dict[str, tuple[str, bool]]:
@@ -227,6 +314,10 @@ def validate_plugin() -> None:
         raise SyncError("plugin manifest must describe the root DCS skill plugin")
     if not isinstance(manifest.get("version"), str):
         raise SyncError("plugin manifest must have a version")
+    registry_names = {upstream.name for upstream in load_registry(DEFAULT_REGISTRY)}
+    lock_names = set(load_lock())
+    if registry_names != lock_names:
+        raise SyncError("upstreams.lock.json must contain exactly the registered skills")
     for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
         validate_skill(directory, directory.name)
 
@@ -249,18 +340,34 @@ def plugin_version(bump: bool = False) -> str:
 def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
     results: list[Result] = []
     staged: list[tuple[Path, Path]] = []
+    locked = load_lock(required=False)
+    trees: dict[str, str] = {}
     with tempfile.TemporaryDirectory(prefix="dcs-upstreams-") as temp:
+        temp_root = Path(temp)
+        checkout_root = temp_root / "checkouts"
+        checkout_root.mkdir()
+        candidate_root = temp_root / "candidates"
+        candidate_root.mkdir()
         for upstream in load_registry(registry):
-            source, commit = checkout(upstream, Path(temp))
+            source, commit, tree = checkout(upstream, checkout_root)
+            candidate = candidate_root / upstream.name
+            adapt_candidate(upstream, source, candidate)
             destination = ROOT.joinpath(*upstream.destination.parts)
-            changes = describe_changes(snapshot(destination), snapshot(source))
-            if changes:
-                staged.append((source, destination))
-            results.append(Result(upstream, commit, changes))
+            content_changes = describe_changes(snapshot(destination), snapshot(candidate))
+            changes = list(content_changes)
+            if locked.get(upstream.name) != tree:
+                previous = locked.get(upstream.name, "untracked")
+                changes.insert(0, f"upstream tree {previous[:12]} -> {tree[:12]}")
+            if content_changes:
+                staged.append((candidate, destination))
+            trees[upstream.name] = tree
+            results.append(Result(upstream, commit, tree, tuple(changes)))
         if write:
             for source, destination in staged:
                 replace_directory(source, destination)
-    return results, bool(staged)
+            if locked != trees:
+                write_lock(trees)
+    return results, any(result.changes for result in results)
 
 
 def report(results: list[Result], changed: bool, version: str) -> str:

@@ -7,6 +7,34 @@
       "ref": "main",
       "path": "cursor-team-kit/skills/deslop",
       "destination": "skills/deslop"
+    },
+    {
+      "name": "thermo-nuclear-code-quality-review",
+      "repository": "cursor/plugins",
+      "ref": "main",
+      "path": "thermos/skills/thermo-nuclear-code-quality-review",
+      "destination": "skills/thermo-nuclear-code-quality-review",
+      "adapter": "cursor-manual-only",
+      "overlay": "ports/thermo-nuclear-code-quality-review"
+    },
+    {
+      "name": "thermo-nuclear-review",
+      "repository": "cursor/plugins",
+      "ref": "main",
+      "path": "thermos/skills/thermo-nuclear-review",
+      "destination": "skills/thermo-nuclear-review",
+      "adapter": "cursor-manual-only",
+      "overlay": "ports/thermo-nuclear-review"
+    },
+    {
+      "name": "thermos",
+      "repository": "cursor/plugins",
+      "ref": "main",
+      "path": "thermos/skills/thermos",
+      "destination": "skills/thermos",
+      "adapter": "cursor-manual-only",
+      "overlay": "ports/thermos",
+      "patch": "ports/thermos.patch"
     }
   ]
 }
