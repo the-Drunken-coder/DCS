@@ -27,6 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install synchronizer dependencies
+        run: python3 -m pip install --disable-pip-version-check -r tools/requirements.txt
+      - name: Test synchronizer
+        run: python3 -m unittest discover -s tests -v
       - name: Validate DCS
         run: python3 tools/sync_upstreams.py --validate
       - name: Check upstream skills
@@ -39,12 +43,18 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Install synchronizer dependencies
+        run: python3 -m pip install --disable-pip-version-check -r tools/requirements.txt
       - name: Synchronize upstream skills
         id: sync
         run: >-
           python3 tools/sync_upstreams.py
           --sync
           --bump-plugin-version
+      - name: Test synchronized DCS
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 tools/sync_upstreams.py --validate
       - name: Push update branch
         if: steps.sync.outputs.changed == 'true'
         run: |
@@ -52,7 +62,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add .codex-plugin/plugin.json skills
+          git add .codex-plugin/plugin.json skills upstreams.lock.json
           git commit -m "chore: sync upstream skills"
           git push origin "$branch"
           compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1"

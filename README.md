@@ -8,15 +8,26 @@ The repository root is a skill-only Codex plugin. It contains three maintainer-o
 - `babysit-pr` monitors an existing pull request through reviews and CI.
 - `ask-opus` gets a second opinion from Opus through `claude -p`.
 
-It also vendors selected public skills:
+It also tracks selected public skills:
 
 - `deslop` removes AI-generated code slop. DCS tracks the skill from Cursor's public `cursor/plugins` repository.
+- `thermo-nuclear-review` performs a strict correctness and security branch audit.
+- `thermo-nuclear-code-quality-review` performs a strict maintainability and structure audit.
+- `thermos` runs both Thermo-Nuclear reviews concurrently and synthesizes the results.
 
 Future skills belong in `skills/` and should be added only when they earn their place.
 
 ## Upstream skills
 
 [`upstreams.json`](upstreams.json) is the complete administration file for third-party skills. Each entry names a public Git repository, a ref, the source directory, and its destination under `skills/`.
+
+Most skills are exact mirrors. Adapted skills can also name a small adapter, patch, or file overlay under `ports/`. The Thermos ports remove Cursor-only invocation metadata, replace Cursor's subagent syntax with Codex instructions, and add Codex UI metadata. [`upstreams.lock.json`](upstreams.lock.json) records each adapted upstream Git tree, so a change remains visible even when an adapter produces identical packaged output. Its `managedSkills` list tracks every generated skill so removing a registry entry also removes its packaged directory.
+
+Install the synchronizer's YAML dependency once:
+
+```bash
+python3 -m pip install -r tools/requirements.txt
+```
 
 Check for upstream changes without modifying the repository:
 
@@ -82,7 +93,9 @@ Clone and validate the plugin:
 git clone https://github.com/the-Drunken-coder/DCS.git
 cd DCS
 python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
+python3 -m unittest discover -s tests -v
 python3 tools/sync_upstreams.py --validate
+python3 tools/sync_upstreams.py --check
 ```
 
 To test the checkout directly, replace only the DCS marketplace with the local repository and reinstall:

@@ -16,13 +16,19 @@ import subprocess
 import sys
 import tempfile
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "upstreams.json"
+UPSTREAM_LOCK = ROOT / "upstreams.lock.json"
 PLUGIN_MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
 SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 PLAIN_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
+MAX_SKILL_NAME_LENGTH = 64
 
 
 class SyncError(RuntimeError):
@@ -36,6 +42,9 @@ class Upstream:
     ref: str
     path: PurePosixPath
     destination: PurePosixPath
+    adapter: str | None
+    overlay: PurePosixPath | None
+    patch: PurePosixPath | None
 
     @property
     def source(self) -> str:
@@ -46,7 +55,12 @@ class Upstream:
 class Result:
     upstream: Upstream
     commit: str
+    tree: str
     changes: tuple[str, ...]
+
+
+def tracks_source_tree(upstream: Upstream) -> bool:
+    return bool(upstream.adapter or upstream.overlay or upstream.patch)
 
 
 def relative_path(value: object, field: str) -> PurePosixPath:
@@ -77,14 +91,19 @@ def load_registry(path: Path) -> list[Upstream]:
     names: set[str] = set()
     for index, raw in enumerate(data["skills"]):
         label = f"skills[{index}]"
-        fields = {"name", "repository", "ref", "path", "destination"}
-        if not isinstance(raw, dict) or set(raw) != fields:
-            raise SyncError(f"{label} must contain exactly: {', '.join(sorted(fields))}")
+        required = {"name", "repository", "ref", "path", "destination"}
+        optional = {"adapter", "overlay", "patch"}
+        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - optional:
+            raise SyncError(f"{label} must contain required fields and only supported adapter fields")
 
         name = raw["name"]
         repository = raw["repository"]
         ref = raw["ref"]
-        if not isinstance(name, str) or not SKILL_NAME.fullmatch(name):
+        if (
+            not isinstance(name, str)
+            or not SKILL_NAME.fullmatch(name)
+            or len(name) > MAX_SKILL_NAME_LENGTH
+        ):
             raise SyncError(f"{label}.name must be lower-case hyphen-case")
         if not isinstance(repository, str) or not GITHUB_REPOSITORY.fullmatch(repository):
             raise SyncError(f"{label}.repository must be a GitHub owner/repo")
@@ -93,14 +112,91 @@ def load_registry(path: Path) -> list[Upstream]:
 
         source_path = relative_path(raw["path"], f"{label}.path")
         destination = relative_path(raw["destination"], f"{label}.destination")
+        adapter = raw.get("adapter")
+        if adapter is not None and adapter != "cursor-manual-only":
+            raise SyncError(f"{label}.adapter is not supported")
+        overlay = relative_path(raw["overlay"], f"{label}.overlay") if "overlay" in raw else None
+        patch = relative_path(raw["patch"], f"{label}.patch") if "patch" in raw else None
+        if overlay and overlay.parts[0] != "ports":
+            raise SyncError(f"{label}.overlay must live under ports/")
+        if patch and (patch.parts[0] != "ports" or patch.suffix != ".patch"):
+            raise SyncError(f"{label}.patch must be a .patch file under ports/")
         if destination != PurePosixPath("skills") / name:
             raise SyncError(f"{label}.destination must be skills/{name}")
         if name in names:
             raise SyncError(f"{label}.name is duplicated")
 
         names.add(name)
-        upstreams.append(Upstream(name, repository, ref, source_path, destination))
+        upstreams.append(Upstream(name, repository, ref, source_path, destination, adapter, overlay, patch))
     return upstreams
+
+
+def load_lock_state(
+    path: Path | None = None, required: bool = True
+) -> tuple[dict[str, str], set[str]]:
+    path = path or UPSTREAM_LOCK
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        if required:
+            raise SyncError(f"missing upstream lock: {path}") from None
+        return {}, set()
+    except (OSError, json.JSONDecodeError) as error:
+        raise SyncError(f"cannot read {path}: {error}") from error
+    skills = data.get("skills") if isinstance(data, dict) and data.get("schemaVersion") == 1 else None
+    if not isinstance(skills, dict) or any(
+        not isinstance(name, str)
+        or not SKILL_NAME.fullmatch(name)
+        or not isinstance(tree, str)
+        or not re.fullmatch(r"[0-9a-f]{40}", tree)
+        for name, tree in skills.items()
+    ):
+        raise SyncError("upstreams.lock.json must contain skill names mapped to Git tree hashes")
+    managed_value = data.get("managedSkills", list(skills))
+    if (
+        not isinstance(managed_value, list)
+        or any(not isinstance(name, str) or not SKILL_NAME.fullmatch(name) for name in managed_value)
+        or len(managed_value) != len(set(managed_value))
+    ):
+        raise SyncError("upstreams.lock.json managedSkills must contain unique skill names")
+    managed = set(managed_value)
+    if not set(skills) <= managed:
+        raise SyncError("upstreams.lock.json managedSkills must include every source-tree lock")
+    return skills, managed
+
+
+def load_lock(path: Path | None = None, required: bool = True) -> dict[str, str]:
+    return load_lock_state(path, required)[0]
+
+
+def write_lock(
+    trees: dict[str, str], path: Path | None = None, *, managed: set[str] | None = None
+) -> None:
+    path = path or UPSTREAM_LOCK
+    managed = set(trees) if managed is None else managed
+    content = json.dumps(
+        {
+            "schemaVersion": 1,
+            "skills": dict(sorted(trees.items())),
+            "managedSkills": sorted(managed),
+        },
+        indent=2,
+    ) + "\n"
+    write_bytes_atomic(path, content.encode())
+
+
+def write_bytes_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as file:
+            file.write(content)
+        temporary.chmod(path.stat().st_mode if path.exists() else 0o644)
+        temporary.replace(path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def git(*arguments: str, cwd: Path | None = None) -> str:
@@ -124,53 +220,206 @@ def reject_symlinks(root: Path) -> None:
             raise SyncError(f"{root} contains a symlink: {path.relative_to(root)}")
 
 
-def validate_skill(directory: Path, expected_name: str) -> None:
+def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> None:
     skill_file = directory / "SKILL.md"
     if not skill_file.is_file():
         raise SyncError(f"{directory} must contain SKILL.md")
     try:
-        lines = skill_file.read_text(encoding="utf-8").splitlines()
+        contents = skill_file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise SyncError(f"cannot read {skill_file}: {error}") from error
+    lines = contents.splitlines()
     if not lines or lines[0] != "---":
         raise SyncError(f"{skill_file} must start with YAML frontmatter")
     try:
         end = lines.index("---", 1)
     except ValueError as error:
         raise SyncError(f"{skill_file} has unterminated YAML frontmatter") from error
-
-    fields: dict[str, str] = {}
-    for line in lines[1:end]:
-        key, separator, value = line.partition(":")
-        if separator:
-            fields[key.strip()] = value.strip().strip("\"'")
+    try:
+        fields = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as error:
+        raise SyncError(f"{skill_file} has malformed YAML frontmatter") from error
+    if not isinstance(fields, dict):
+        raise SyncError(f"{skill_file} frontmatter must be an object")
+    if strict and set(fields) - SKILL_FIELDS:
+        raise SyncError(f"{skill_file} frontmatter must contain only supported Codex fields")
+    if not SKILL_NAME.fullmatch(expected_name) or len(expected_name) > MAX_SKILL_NAME_LENGTH:
+        raise SyncError(f"{skill_file} has an invalid skill name")
     if fields.get("name") != expected_name:
         raise SyncError(f"{skill_file} name must be {expected_name!r}")
-    if not fields.get("description"):
+    description = fields.get("description")
+    if not isinstance(description, str) or not description.strip():
         raise SyncError(f"{skill_file} must have a description")
+    if "<" in description or ">" in description or len(description) > 1024:
+        raise SyncError(f"{skill_file} has an invalid description")
 
 
-def checkout(upstream: Upstream, parent: Path) -> tuple[Path, str]:
-    checkout_root = parent / upstream.name
-    url = f"https://github.com/{upstream.repository}.git"
-    git(
-        "clone",
-        "--quiet",
-        "--depth=1",
-        "--filter=blob:none",
-        "--sparse",
-        "--branch",
-        upstream.ref,
-        url,
-        str(checkout_root),
-    )
-    git("sparse-checkout", "set", str(upstream.path), cwd=checkout_root)
+def validate_agent_manifest(directory: Path) -> None:
+    path = directory / "agents" / "openai.yaml"
+    if not path.exists():
+        return
+    if not path.is_file():
+        raise SyncError(f"{path} must be a file")
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as error:
+        raise SyncError(f"cannot read {path}: {error}") from error
+    except yaml.YAMLError as error:
+        raise SyncError(f"{path} has malformed agent YAML") from error
+    if not isinstance(payload, dict):
+        raise SyncError(f"{path} must contain an object")
+    if set(payload) - {"interface", "policy", "dependencies"}:
+        raise SyncError(f"{path} contains unsupported top-level fields")
+
+    interface = payload.get("interface")
+    interface_fields = {
+        "display_name",
+        "short_description",
+        "icon_small",
+        "icon_large",
+        "brand_color",
+        "default_prompt",
+    }
+    if not isinstance(interface, dict) or set(interface) - interface_fields:
+        raise SyncError(f"{path} must contain a supported interface object")
+    for field in ("display_name", "short_description"):
+        if not isinstance(interface.get(field), str) or not interface[field].strip():
+            raise SyncError(f"{path} interface.{field} must be a non-empty string")
+    default_prompt = interface.get("default_prompt")
+    if default_prompt is not None and (
+        not isinstance(default_prompt, str) or not default_prompt.strip()
+    ):
+        raise SyncError(f"{path} interface.default_prompt must be a non-empty string")
+    brand_color = interface.get("brand_color")
+    if brand_color is not None and (
+        not isinstance(brand_color, str) or not HEX_COLOR.fullmatch(brand_color)
+    ):
+        raise SyncError(f"{path} interface.brand_color must use #RRGGBB")
+    for field in ("icon_small", "icon_large"):
+        value = interface.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise SyncError(f"{path} interface.{field} must be a relative file path")
+        try:
+            relative = relative_path(value, f"{path} interface.{field}")
+        except SyncError as error:
+            raise SyncError(f"{path} interface.{field} must be a relative file path") from error
+        icon = directory.joinpath(*relative.parts).resolve()
+        if not icon.is_relative_to(directory.resolve()) or not icon.is_file():
+            raise SyncError(f"{path} interface.{field} must point inside the skill")
+
+    policy = payload.get("policy")
+    if policy is not None:
+        if not isinstance(policy, dict):
+            raise SyncError(f"{path} policy must be an object")
+        if set(policy) - {"allow_implicit_invocation"}:
+            raise SyncError(f"{path} contains unsupported policy fields")
+        value = policy.get("allow_implicit_invocation")
+        if value is not None and not isinstance(value, bool):
+            raise SyncError(f"{path} policy.allow_implicit_invocation must be a boolean")
+
+    dependencies = payload.get("dependencies")
+    if dependencies is not None:
+        if not isinstance(dependencies, dict):
+            raise SyncError(f"{path} dependencies must be an object")
+        if set(dependencies) - {"tools"}:
+            raise SyncError(f"{path} contains unsupported dependency fields")
+
+
+def checkout(
+    upstream: Upstream,
+    parent: Path,
+    cache: dict[tuple[str, str], tuple[Path, str]] | None = None,
+) -> tuple[Path, str, str]:
+    cache = cache if cache is not None else {}
+    key = (upstream.repository, upstream.ref)
+    if key in cache:
+        checkout_root, commit = cache[key]
+        git("sparse-checkout", "add", str(upstream.path), cwd=checkout_root)
+    else:
+        checkout_root = parent / f"source-{len(cache)}"
+        url = f"https://github.com/{upstream.repository}.git"
+        git(
+            "clone",
+            "--quiet",
+            "--depth=1",
+            "--filter=blob:none",
+            "--sparse",
+            "--branch",
+            upstream.ref,
+            url,
+            str(checkout_root),
+        )
+        git("sparse-checkout", "set", str(upstream.path), cwd=checkout_root)
+        commit = git("rev-parse", "HEAD", cwd=checkout_root)
+        cache[key] = (checkout_root, commit)
     source = checkout_root.joinpath(*upstream.path.parts)
-    if not source.is_dir() or not source.resolve().is_relative_to(checkout_root.resolve()):
+    if (
+        source.is_symlink()
+        or not source.is_dir()
+        or not source.resolve().is_relative_to(checkout_root.resolve())
+    ):
         raise SyncError(f"{upstream.source} is not a safe directory")
     reject_symlinks(source)
-    validate_skill(source, upstream.name)
-    return source, git("rev-parse", "HEAD", cwd=checkout_root)
+    validate_skill(source, upstream.name, strict=False)
+    tree = git("rev-parse", f"HEAD:{upstream.path}", cwd=checkout_root)
+    return source, commit, tree
+
+
+def apply_port_patch(candidate: Path, patch: Path) -> None:
+    process = subprocess.run(
+        ["patch", "--posix", "-s", "-f", "-p1", "-d", str(candidate), "-i", str(patch)],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if process.returncode:
+        detail = process.stderr.strip() or process.stdout.strip()
+        raise SyncError(f"cannot apply {patch.relative_to(ROOT)}: {detail}")
+
+
+def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
+    shutil.copytree(source, candidate)
+    if upstream.adapter == "cursor-manual-only":
+        skill_file = candidate / "SKILL.md"
+        lines = skill_file.read_text(encoding="utf-8").splitlines(keepends=True)
+        try:
+            frontmatter_end = next(index for index, line in enumerate(lines[1:], 1) if line.strip() == "---")
+        except StopIteration as error:
+            raise SyncError(f"{upstream.source} has unterminated YAML frontmatter") from error
+        marker = [
+            index
+            for index, line in enumerate(lines[1:frontmatter_end], 1)
+            if line.strip() == "disable-model-invocation: true"
+        ]
+        if len(marker) != 1:
+            raise SyncError(f"{upstream.source} must contain one disable-model-invocation: true marker")
+        del lines[marker[0]]
+        skill_file.write_text("".join(lines), encoding="utf-8")
+    if upstream.patch:
+        patch = ROOT.joinpath(*upstream.patch.parts).resolve()
+        if not patch.is_file() or not patch.is_relative_to(ROOT.resolve()):
+            raise SyncError(f"missing or unsafe port patch: {upstream.patch}")
+        apply_port_patch(candidate, patch)
+    if upstream.overlay:
+        overlay = ROOT.joinpath(*upstream.overlay.parts).resolve()
+        if not overlay.is_dir() or not overlay.is_relative_to(ROOT.resolve()):
+            raise SyncError(f"missing or unsafe port overlay: {upstream.overlay}")
+        reject_symlinks(overlay)
+        collisions = sorted(
+            path.relative_to(overlay)
+            for path in overlay.rglob("*")
+            if path.is_file() and (candidate / path.relative_to(overlay)).exists()
+        )
+        if collisions:
+            paths = ", ".join(path.as_posix() for path in collisions)
+            raise SyncError(f"{upstream.source} port overlay collides with upstream files: {paths}")
+        shutil.copytree(overlay, candidate, dirs_exist_ok=True)
+    reject_symlinks(candidate)
+    validate_skill(candidate, upstream.name)
+    validate_agent_manifest(candidate)
 
 
 def snapshot(root: Path) -> dict[str, tuple[str, bool]]:
@@ -218,6 +467,45 @@ def replace_directory(source: Path, destination: Path) -> None:
             raise
 
 
+def install_synchronization(
+    staged: list[tuple[Path, Path]], trees: dict[str, str], managed: set[str], removed: set[str]
+) -> None:
+    skills = ROOT / "skills"
+    previous_lock = UPSTREAM_LOCK.read_bytes() if UPSTREAM_LOCK.exists() else None
+    with tempfile.TemporaryDirectory(prefix=".skills-sync-", dir=ROOT) as temp:
+        transaction = Path(temp)
+        incoming_skills = transaction / "incoming"
+        previous_skills = transaction / "previous"
+        shutil.copytree(skills, incoming_skills)
+        shutil.copytree(skills, previous_skills)
+        for source, destination in staged:
+            relative = destination.relative_to(skills)
+            incoming = incoming_skills / relative
+            if incoming.exists():
+                shutil.rmtree(incoming)
+            shutil.copytree(source, incoming)
+        for name in removed:
+            incoming = incoming_skills / name
+            if incoming.exists():
+                shutil.rmtree(incoming)
+
+        try:
+            if staged or removed:
+                replace_directory(incoming_skills, skills)
+            write_lock(trees, managed=managed)
+        except Exception as error:
+            try:
+                if staged or removed:
+                    replace_directory(previous_skills, skills)
+                if previous_lock is None:
+                    UPSTREAM_LOCK.unlink(missing_ok=True)
+                else:
+                    write_bytes_atomic(UPSTREAM_LOCK, previous_lock)
+            except Exception as rollback_error:
+                raise SyncError(f"synchronization failed and rollback also failed: {rollback_error}") from error
+            raise
+
+
 def validate_plugin() -> None:
     try:
         manifest = json.loads(PLUGIN_MANIFEST.read_text(encoding="utf-8"))
@@ -227,8 +515,24 @@ def validate_plugin() -> None:
         raise SyncError("plugin manifest must describe the root DCS skill plugin")
     if not isinstance(manifest.get("version"), str):
         raise SyncError("plugin manifest must have a version")
+    upstreams = load_registry(DEFAULT_REGISTRY)
+    registry_names = {upstream.name for upstream in upstreams}
+    adapted_names = {upstream.name for upstream in upstreams if tracks_source_tree(upstream)}
+    lock, managed = load_lock_state()
+    if adapted_names != set(lock):
+        raise SyncError("upstreams.lock.json must contain exactly the registered adapted skills")
+    if registry_names != managed:
+        raise SyncError("upstreams.lock.json managedSkills must contain exactly the registered skills")
+    missing = sorted(
+        upstream.name
+        for upstream in upstreams
+        if not ROOT.joinpath(*upstream.destination.parts).is_dir()
+    )
+    if missing:
+        raise SyncError(f"missing registered skill directories: {', '.join(missing)}")
     for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
         validate_skill(directory, directory.name)
+        validate_agent_manifest(directory)
 
 
 def plugin_version(bump: bool = False) -> str:
@@ -247,20 +551,42 @@ def plugin_version(bump: bool = False) -> str:
 
 
 def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
+    if registry.resolve() != DEFAULT_REGISTRY.resolve():
+        operation = "writes" if write else "checks"
+        raise SyncError(f"synchronization {operation} require the canonical upstreams.json registry")
     results: list[Result] = []
     staged: list[tuple[Path, Path]] = []
+    locked, managed = load_lock_state(required=False)
+    trees: dict[str, str] = {}
+    upstreams = load_registry(registry)
+    registered_names = {upstream.name for upstream in upstreams}
+    removed = managed - registered_names
     with tempfile.TemporaryDirectory(prefix="dcs-upstreams-") as temp:
-        for upstream in load_registry(registry):
-            source, commit = checkout(upstream, Path(temp))
+        temp_root = Path(temp)
+        checkout_root = temp_root / "checkouts"
+        checkout_root.mkdir()
+        candidate_root = temp_root / "candidates"
+        candidate_root.mkdir()
+        checkout_cache: dict[tuple[str, str], tuple[Path, str]] = {}
+        for upstream in upstreams:
+            source, commit, tree = checkout(upstream, checkout_root, checkout_cache)
+            candidate = candidate_root / upstream.name
+            adapt_candidate(upstream, source, candidate)
             destination = ROOT.joinpath(*upstream.destination.parts)
-            changes = describe_changes(snapshot(destination), snapshot(source))
-            if changes:
-                staged.append((source, destination))
-            results.append(Result(upstream, commit, changes))
-        if write:
-            for source, destination in staged:
-                replace_directory(source, destination)
-    return results, bool(staged)
+            content_changes = describe_changes(snapshot(destination), snapshot(candidate))
+            changes = list(content_changes)
+            if tracks_source_tree(upstream) and locked.get(upstream.name) != tree:
+                previous = locked.get(upstream.name, "untracked")
+                changes.insert(0, f"upstream tree {previous[:12]} -> {tree[:12]}")
+            if content_changes:
+                staged.append((candidate, destination))
+            if tracks_source_tree(upstream):
+                trees[upstream.name] = tree
+            results.append(Result(upstream, commit, tree, tuple(changes)))
+        lock_changed = locked != trees or managed != registered_names
+        if write and (staged or lock_changed or removed):
+            install_synchronization(staged, trees, registered_names, removed)
+    return results, lock_changed or any(result.changes for result in results)
 
 
 def report(results: list[Result], changed: bool, version: str) -> str:
