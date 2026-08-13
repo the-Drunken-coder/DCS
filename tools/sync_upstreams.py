@@ -24,6 +24,7 @@ PLUGIN_MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
 SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 PLAIN_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class SyncError(RuntimeError):
@@ -276,6 +277,99 @@ def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> 
         raise SyncError(f"{skill_file} must have a description")
 
 
+def parse_agent_manifest(path: Path) -> dict[str, dict[str, object]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        raise SyncError(f"cannot read {path}: {error}") from error
+
+    payload: dict[str, dict[str, object]] = {}
+    section: dict[str, object] | None = None
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.startswith("  ") and not line.startswith(("   ", "\t")):
+            if section is None:
+                raise SyncError(f"{path} has malformed agent YAML")
+            key, separator, value = line[2:].partition(":")
+            key = key.strip()
+            if not separator or not key or key in section:
+                raise SyncError(f"{path} has malformed agent YAML")
+            try:
+                section[key] = parse_yaml_scalar(value, path)
+            except SyncError as error:
+                raise SyncError(f"{path} has malformed agent YAML") from error
+            continue
+        if line[0].isspace():
+            raise SyncError(f"{path} has malformed agent YAML")
+        key, separator, value = line.partition(":")
+        key = key.strip()
+        if not separator or not key or value.strip() or key in payload:
+            raise SyncError(f"{path} has malformed agent YAML")
+        section = {}
+        payload[key] = section
+    return payload
+
+
+def validate_agent_manifest(directory: Path) -> None:
+    path = directory / "agents" / "openai.yaml"
+    if not path.exists():
+        return
+    if not path.is_file():
+        raise SyncError(f"{path} must be a file")
+    payload = parse_agent_manifest(path)
+    if set(payload) - {"interface", "policy", "dependencies"}:
+        raise SyncError(f"{path} contains unsupported top-level fields")
+
+    interface = payload.get("interface")
+    interface_fields = {
+        "display_name",
+        "short_description",
+        "icon_small",
+        "icon_large",
+        "brand_color",
+        "default_prompt",
+    }
+    if interface is None or set(interface) - interface_fields:
+        raise SyncError(f"{path} must contain a supported interface object")
+    for field in ("display_name", "short_description"):
+        if not isinstance(interface.get(field), str) or not interface[field]:
+            raise SyncError(f"{path} interface.{field} must be a non-empty string")
+    default_prompt = interface.get("default_prompt")
+    if default_prompt is not None and (not isinstance(default_prompt, str) or not default_prompt):
+        raise SyncError(f"{path} interface.default_prompt must be a non-empty string")
+    brand_color = interface.get("brand_color")
+    if brand_color is not None and (
+        not isinstance(brand_color, str) or not HEX_COLOR.fullmatch(brand_color)
+    ):
+        raise SyncError(f"{path} interface.brand_color must use #RRGGBB")
+    for field in ("icon_small", "icon_large"):
+        value = interface.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise SyncError(f"{path} interface.{field} must be a relative file path")
+        try:
+            relative = relative_path(value, f"{path} interface.{field}")
+        except SyncError as error:
+            raise SyncError(f"{path} interface.{field} must be a relative file path") from error
+        icon = directory.joinpath(*relative.parts).resolve()
+        if not icon.is_relative_to(ROOT.resolve()) or not icon.is_file():
+            raise SyncError(f"{path} interface.{field} must point inside the plugin")
+
+    policy = payload.get("policy")
+    if policy is not None:
+        if set(policy) - {"allow_implicit_invocation"}:
+            raise SyncError(f"{path} contains unsupported policy fields")
+        value = policy.get("allow_implicit_invocation")
+        if value is not None and not isinstance(value, bool):
+            raise SyncError(f"{path} policy.allow_implicit_invocation must be a boolean")
+
+    dependencies = payload.get("dependencies")
+    if dependencies is not None and set(dependencies) - {"tools"}:
+        raise SyncError(f"{path} contains unsupported dependency fields")
+
+
 def checkout(
     upstream: Upstream,
     parent: Path,
@@ -469,6 +563,7 @@ def validate_plugin() -> None:
         raise SyncError("upstreams.lock.json managedSkills must contain exactly the registered skills")
     for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
         validate_skill(directory, directory.name)
+        validate_agent_manifest(directory)
 
 
 def plugin_version(bump: bool = False) -> str:

@@ -157,6 +157,37 @@ class SkillValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(sync.SyncError, "malformed YAML frontmatter"):
                     sync.validate_skill(skill, "example")
 
+    def test_rejects_invalid_agent_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            agents = skill / "agents"
+            agents.mkdir()
+            (agents / "openai.yaml").write_text(
+                "interface:\n"
+                '  display_name: "unterminated\n'
+                '  short_description: "Example skill"\n',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "malformed agent YAML"):
+                sync.validate_agent_manifest(skill)
+
+    def test_rejects_unsupported_agent_manifest_field(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            agents = skill / "agents"
+            agents.mkdir()
+            (agents / "openai.yaml").write_text(
+                "interface:\n"
+                '  display_name: "Example"\n'
+                '  short_description: "Example skill description"\n'
+                "unsupported:\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "unsupported top-level"):
+                sync.validate_agent_manifest(skill)
+
 
 class CheckoutTests(unittest.TestCase):
     def test_shared_repository_ref_uses_one_clone(self) -> None:
