@@ -1,0 +1,6 @@
+interface:
+  display_name: "Pstack"
+  short_description: "Rigorous evidence-first engineering workflows"
+  default_prompt: "Use $pstack to solve this engineering task with the smallest evidence-backed change."
+policy:
+  allow_implicit_invocation: false
