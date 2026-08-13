@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ask Opus"
+  short_description: "Second opinions through Claude CLI"
+  default_prompt: "Use $ask-opus to get Opus's second opinion on this."

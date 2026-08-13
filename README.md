@@ -2,7 +2,13 @@
 
 Drunken Coding Skills: a deliberately small, personal library of the Codex skills I actually use.
 
-The repository root is a skill-only Codex plugin. It starts with no skills; future skills belong in `skills/`.
+The repository root is a skill-only Codex plugin. It currently contains three maintainer-owned skills:
+
+- `file-pr` opens a focused pull request for the current branch.
+- `babysit-pr` monitors an existing pull request through reviews and CI.
+- `ask-opus` gets a second opinion from Opus through `claude -p`.
+
+Future skills belong in `skills/` and should be added only when they earn their place.
 
 ## Install
 
