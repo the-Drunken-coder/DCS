@@ -29,6 +29,8 @@ PLAIN_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
 MAX_SKILL_NAME_LENGTH = 64
+PSTACK_ADAPTER = "pstack-single-skill"
+SUPPORTED_ADAPTERS = {"cursor-manual-only", PSTACK_ADAPTER}
 
 
 class SyncError(RuntimeError):
@@ -113,7 +115,9 @@ def load_registry(path: Path) -> list[Upstream]:
         source_path = relative_path(raw["path"], f"{label}.path")
         destination = relative_path(raw["destination"], f"{label}.destination")
         adapter = raw.get("adapter")
-        if adapter is not None and adapter != "cursor-manual-only":
+        if adapter is not None and (
+            not isinstance(adapter, str) or adapter not in SUPPORTED_ADAPTERS
+        ):
             raise SyncError(f"{label}.adapter is not supported")
         overlay = relative_path(raw["overlay"], f"{label}.overlay") if "overlay" in raw else None
         patch = relative_path(raw["patch"], f"{label}.patch") if "patch" in raw else None
@@ -123,6 +127,18 @@ def load_registry(path: Path) -> list[Upstream]:
             raise SyncError(f"{label}.patch must be a .patch file under ports/")
         if destination != PurePosixPath("skills") / name:
             raise SyncError(f"{label}.destination must be skills/{name}")
+        if adapter == PSTACK_ADAPTER and (
+            name != "pstack"
+            or repository != "cursor/plugins"
+            or ref != "main"
+            or source_path != PurePosixPath("pstack")
+            or overlay != PurePosixPath("ports/pstack")
+            or patch is not None
+        ):
+            raise SyncError(
+                f"{label} pstack adapter must use cursor/plugins@main:pstack -> "
+                "skills/pstack with ports/pstack"
+            )
         if name in names:
             raise SyncError(f"{label}.name is duplicated")
 
@@ -327,6 +343,29 @@ def validate_agent_manifest(directory: Path) -> None:
             raise SyncError(f"{path} contains unsupported dependency fields")
 
 
+def validate_pstack_source(directory: Path) -> None:
+    manifest_path = directory / ".cursor-plugin" / "plugin.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SyncError(f"cannot read pstack manifest: {error}") from error
+    if not isinstance(manifest, dict):
+        raise SyncError("pstack manifest must contain an object")
+    if manifest.get("name") != "pstack" or manifest.get("license") != "MIT":
+        raise SyncError("pstack source must retain its named MIT plugin manifest")
+
+    mode = directory / "skills" / "poteto-mode" / "SKILL.md"
+    try:
+        mode_contents = mode.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise SyncError(f"cannot read pstack poteto-mode: {error}") from error
+    if not all(
+        marker in mode_contents
+        for marker in ("disable-model-invocation: true", "## Principles", "## Playbooks")
+    ):
+        raise SyncError("pstack poteto-mode entry point changed; review the single-skill port")
+
+
 def checkout(
     upstream: Upstream,
     parent: Path,
@@ -362,7 +401,10 @@ def checkout(
     ):
         raise SyncError(f"{upstream.source} is not a safe directory")
     reject_symlinks(source)
-    validate_skill(source, upstream.name, strict=False)
+    if upstream.adapter == PSTACK_ADAPTER:
+        validate_pstack_source(source)
+    else:
+        validate_skill(source, upstream.name, strict=False)
     tree = git("rev-parse", f"HEAD:{upstream.path}", cwd=checkout_root)
     return source, commit, tree
 
@@ -381,7 +423,11 @@ def apply_port_patch(candidate: Path, patch: Path) -> None:
 
 
 def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
-    shutil.copytree(source, candidate)
+    if upstream.adapter == PSTACK_ADAPTER:
+        validate_pstack_source(source)
+        candidate.mkdir()
+    else:
+        shutil.copytree(source, candidate)
     if upstream.adapter == "cursor-manual-only":
         skill_file = candidate / "SKILL.md"
         lines = skill_file.read_text(encoding="utf-8").splitlines(keepends=True)
