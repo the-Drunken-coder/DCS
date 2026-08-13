@@ -122,14 +122,16 @@ def load_registry(path: Path) -> list[Upstream]:
     return upstreams
 
 
-def load_lock(path: Path | None = None, required: bool = True) -> dict[str, str]:
+def load_lock_state(
+    path: Path | None = None, required: bool = True
+) -> tuple[dict[str, str], set[str]]:
     path = path or UPSTREAM_LOCK
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         if required:
             raise SyncError(f"missing upstream lock: {path}")
-        return {}
+        return {}, set()
     except (OSError, json.JSONDecodeError) as error:
         raise SyncError(f"cannot read {path}: {error}") from error
     skills = data.get("skills") if isinstance(data, dict) and data.get("schemaVersion") == 1 else None
@@ -141,12 +143,36 @@ def load_lock(path: Path | None = None, required: bool = True) -> dict[str, str]
         for name, tree in skills.items()
     ):
         raise SyncError("upstreams.lock.json must contain skill names mapped to Git tree hashes")
-    return skills
+    managed_value = data.get("managedSkills", list(skills))
+    if (
+        not isinstance(managed_value, list)
+        or any(not isinstance(name, str) or not SKILL_NAME.fullmatch(name) for name in managed_value)
+        or len(managed_value) != len(set(managed_value))
+    ):
+        raise SyncError("upstreams.lock.json managedSkills must contain unique skill names")
+    managed = set(managed_value)
+    if not set(skills) <= managed:
+        raise SyncError("upstreams.lock.json managedSkills must include every source-tree lock")
+    return skills, managed
 
 
-def write_lock(trees: dict[str, str], path: Path | None = None) -> None:
+def load_lock(path: Path | None = None, required: bool = True) -> dict[str, str]:
+    return load_lock_state(path, required)[0]
+
+
+def write_lock(
+    trees: dict[str, str], path: Path | None = None, *, managed: set[str] | None = None
+) -> None:
     path = path or UPSTREAM_LOCK
-    content = json.dumps({"schemaVersion": 1, "skills": trees}, indent=2) + "\n"
+    managed = set(trees) if managed is None else managed
+    content = json.dumps(
+        {
+            "schemaVersion": 1,
+            "skills": dict(sorted(trees.items())),
+            "managedSkills": sorted(managed),
+        },
+        indent=2,
+    ) + "\n"
     write_bytes_atomic(path, content.encode())
 
 
@@ -386,7 +412,7 @@ def replace_directory(source: Path, destination: Path) -> None:
 
 
 def install_synchronization(
-    staged: list[tuple[Path, Path]], trees: dict[str, str], removed: set[str]
+    staged: list[tuple[Path, Path]], trees: dict[str, str], managed: set[str], removed: set[str]
 ) -> None:
     skills = ROOT / "skills"
     previous_lock = UPSTREAM_LOCK.read_bytes() if UPSTREAM_LOCK.exists() else None
@@ -410,7 +436,7 @@ def install_synchronization(
         try:
             if staged or removed:
                 replace_directory(incoming_skills, skills)
-            write_lock(trees)
+            write_lock(trees, managed=managed)
         except Exception as error:
             try:
                 if staged or removed:
@@ -433,12 +459,14 @@ def validate_plugin() -> None:
         raise SyncError("plugin manifest must describe the root DCS skill plugin")
     if not isinstance(manifest.get("version"), str):
         raise SyncError("plugin manifest must have a version")
-    registry_names = {
-        upstream.name for upstream in load_registry(DEFAULT_REGISTRY) if tracks_source_tree(upstream)
-    }
-    lock_names = set(load_lock())
-    if registry_names != lock_names:
+    upstreams = load_registry(DEFAULT_REGISTRY)
+    registry_names = {upstream.name for upstream in upstreams}
+    adapted_names = {upstream.name for upstream in upstreams if tracks_source_tree(upstream)}
+    lock, managed = load_lock_state()
+    if adapted_names != set(lock):
         raise SyncError("upstreams.lock.json must contain exactly the registered adapted skills")
+    if registry_names != managed:
+        raise SyncError("upstreams.lock.json managedSkills must contain exactly the registered skills")
     for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
         validate_skill(directory, directory.name)
 
@@ -464,11 +492,11 @@ def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
         raise SyncError(f"synchronization {operation} require the canonical upstreams.json registry")
     results: list[Result] = []
     staged: list[tuple[Path, Path]] = []
-    locked = load_lock(required=False)
+    locked, managed = load_lock_state(required=False)
     trees: dict[str, str] = {}
     upstreams = load_registry(registry)
     registered_names = {upstream.name for upstream in upstreams}
-    removed = set(locked) - registered_names
+    removed = managed - registered_names
     with tempfile.TemporaryDirectory(prefix="dcs-upstreams-") as temp:
         temp_root = Path(temp)
         checkout_root = temp_root / "checkouts"
@@ -491,9 +519,9 @@ def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
             if tracks_source_tree(upstream):
                 trees[upstream.name] = tree
             results.append(Result(upstream, commit, tree, tuple(changes)))
-        lock_changed = locked != trees
+        lock_changed = locked != trees or managed != registered_names
         if write and (staged or lock_changed or removed):
-            install_synchronization(staged, trees, removed)
+            install_synchronization(staged, trees, registered_names, removed)
     return results, lock_changed or any(result.changes for result in results)
 
 

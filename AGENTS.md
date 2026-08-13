@@ -9,7 +9,7 @@
 - Keep Codex compatibility changes under `ports/`; adapters must fail loudly when upstream assumptions stop matching.
 - Keep upstream synchronization deterministic, reviewable, and free of external AI services or secrets.
 - Nightly automation may detect drift and fail. It must never modify `main` or merge an upstream update automatically.
-- Keep the registry, synchronizer, and workflow small. The source-tree lock and narrow compatibility overlays exist only for adapted upstreams; do not grow them into a package manager.
+- Keep the registry, synchronizer, and workflow small. Source-tree hashes and narrow compatibility overlays exist only for adapted upstreams; `managedSkills` only records which generated directories synchronization owns. Do not grow this into a package manager.
 - Use the built-in `plugin-creator` skill and its validation tooling.
 - Document the exact commands for adding this GitHub repository as a Codex marketplace and installing DCS.
 - Keep changes on `main` unless the user asks for a branch or pull request.

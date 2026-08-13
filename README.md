@@ -21,7 +21,7 @@ Future skills belong in `skills/` and should be added only when they earn their 
 
 [`upstreams.json`](upstreams.json) is the complete administration file for third-party skills. Each entry names a public Git repository, a ref, the source directory, and its destination under `skills/`.
 
-Most skills are exact mirrors. Adapted skills can also name a small adapter, patch, or file overlay under `ports/`. The Thermos ports remove Cursor-only invocation metadata, replace Cursor's subagent syntax with Codex instructions, and add Codex UI metadata. [`upstreams.lock.json`](upstreams.lock.json) records each adapted upstream Git tree, so a change remains visible even when an adapter produces identical packaged output.
+Most skills are exact mirrors. Adapted skills can also name a small adapter, patch, or file overlay under `ports/`. The Thermos ports remove Cursor-only invocation metadata, replace Cursor's subagent syntax with Codex instructions, and add Codex UI metadata. [`upstreams.lock.json`](upstreams.lock.json) records each adapted upstream Git tree, so a change remains visible even when an adapter produces identical packaged output. Its `managedSkills` list tracks every generated skill so removing a registry entry also removes its packaged directory.
 
 Check for upstream changes without modifying the repository:
 

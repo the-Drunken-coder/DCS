@@ -212,6 +212,7 @@ class LockTests(unittest.TestCase):
             sync.write_lock(expected, path)
 
             self.assertEqual(sync.load_lock(path), expected)
+            self.assertEqual(sync.load_lock_state(path)[1], {"example"})
 
     def test_rejects_unsafe_lock_name(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -343,6 +344,32 @@ class LockTests(unittest.TestCase):
             self.assertEqual(results, [])
             self.assertFalse(destination.exists())
             self.assertEqual(sync.load_lock(lock), {})
+
+    def test_deregistered_exact_mirror_skill_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            destination = root / "skills" / "retired"
+            destination.mkdir(parents=True)
+            (destination / "SKILL.md").write_text(
+                "---\nname: retired\ndescription: Retired skill.\n---\n",
+                encoding="utf-8",
+            )
+            registry = root / "upstreams.json"
+            registry.write_text('{"schemaVersion":1,"skills":[]}', encoding="utf-8")
+            lock = root / "upstreams.lock.json"
+            sync.write_lock({}, lock, managed={"retired"})
+
+            with (
+                mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", registry),
+                mock.patch.object(sync, "UPSTREAM_LOCK", lock),
+            ):
+                results, changed = sync.synchronize(registry, write=True)
+
+            self.assertTrue(changed)
+            self.assertEqual(results, [])
+            self.assertFalse(destination.exists())
+            self.assertEqual(sync.load_lock_state(lock), ({}, set()))
 
     def test_failed_lock_write_rolls_back_all_skill_updates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
