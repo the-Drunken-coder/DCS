@@ -361,6 +361,14 @@ class PluginManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "Agent Plugins 1.0 schema"):
                 sync.validate_plugin_manifest(path)
 
+    def test_rejects_leading_zero_version_components(self) -> None:
+        for version in ("01.0.0", "1.00.0", "1.0.00"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary_directory:
+                path = self.write_manifest(Path(temporary_directory), version=version)
+
+                with self.assertRaisesRegex(sync.SyncError, "plain x.y.z semver"):
+                    sync.validate_plugin_manifest(path)
+
     def test_rejects_invalid_optional_metadata(self) -> None:
         for field in ("homepage", "repository", "license"):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary_directory:

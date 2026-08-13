@@ -38,7 +38,7 @@ PLUGIN_FIELDS = {
 }
 SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-PLAIN_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+PLAIN_SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
 MAX_SKILL_NAME_LENGTH = 64
