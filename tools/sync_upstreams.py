@@ -415,6 +415,7 @@ def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
         shutil.copytree(overlay, candidate, dirs_exist_ok=True)
     reject_symlinks(candidate)
     validate_skill(candidate, upstream.name)
+    validate_agent_manifest(candidate)
 
 
 def snapshot(root: Path) -> dict[str, tuple[str, bool]]:

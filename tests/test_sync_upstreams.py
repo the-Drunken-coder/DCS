@@ -49,7 +49,11 @@ class PortAdapterTests(unittest.TestCase):
         overlay = self.root / "ports" / "example" / "agents"
         overlay.mkdir(parents=True)
         (overlay / "openai.yaml").write_text(
-            "policy:\n  allow_implicit_invocation: false\n",
+            "interface:\n"
+            '  display_name: "Example"\n'
+            '  short_description: "Example skill description"\n'
+            "policy:\n"
+            "  allow_implicit_invocation: false\n",
             encoding="utf-8",
         )
         (self.root / "ports" / "example.patch").write_text(
@@ -93,6 +97,27 @@ class PortAdapterTests(unittest.TestCase):
 
         with self.assertRaisesRegex(sync.SyncError, "overlay collides"):
             sync.adapt_candidate(self.upstream(), source, self.root / "candidate")
+
+    def test_exact_mirror_rejects_invalid_agent_manifest_before_install(self) -> None:
+        source = self.write_source(marker=False)
+        agents = source / "agents"
+        agents.mkdir()
+        (agents / "openai.yaml").write_text(
+            'interface:\n  display_name: "unterminated\n', encoding="utf-8"
+        )
+        upstream = sync.Upstream(
+            name="example",
+            repository="owner/repository",
+            ref="main",
+            path=PurePosixPath("skills/example"),
+            destination=PurePosixPath("skills/example"),
+            adapter=None,
+            overlay=None,
+            patch=None,
+        )
+
+        with self.assertRaisesRegex(sync.SyncError, "malformed agent YAML"):
+            sync.adapt_candidate(upstream, source, self.root / "candidate")
 
 
 class RegistryTests(unittest.TestCase):
