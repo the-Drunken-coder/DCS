@@ -199,7 +199,7 @@ def parse_yaml_scalar(value: str, skill_file: Path) -> object:
             return inner.replace("''", "'")
         if (
             not value
-            or value[0] in "[{&*!|>@`#"
+            or value[0] in "[{,]}#&*!|>%@`"
             or value.startswith(("- ", "? ", ": "))
             or re.search(r":(?:\s|$)|\s#", value)
         ):

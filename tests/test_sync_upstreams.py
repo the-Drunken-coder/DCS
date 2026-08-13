@@ -136,7 +136,17 @@ class SkillValidationTests(unittest.TestCase):
                 sync.validate_skill(skill, "example")
 
     def test_rejects_invalid_yaml_scalars(self) -> None:
-        for description in ('"unterminated', "bad: value", "[not, closed", "# comment", "- item"):
+        for description in (
+            '"unterminated',
+            "bad: value",
+            "[not, closed",
+            "# comment",
+            "- item",
+            "%directive",
+            ",flow",
+            "]flow",
+            "}flow",
+        ):
             with self.subTest(description=description), tempfile.TemporaryDirectory() as temporary_directory:
                 skill = Path(temporary_directory)
                 (skill / "SKILL.md").write_text(
