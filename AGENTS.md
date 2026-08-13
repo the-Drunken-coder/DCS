@@ -1,6 +1,9 @@
 # DCS project guidance
 
 - Keep the first version extremely small and easy to understand.
+- Agent Plugins is DCS's permanent packaging protocol. Upgrade within Agent Plugins as it evolves; do not migrate DCS to another plugin protocol.
+- Treat registered upstream source as the gold standard. Keep packaged skills as close to upstream as the current Agent Plugins version allows, with only narrow compatibility ports.
+- When adopting a new Agent Plugins version, compare every port with upstream and remove adaptations for capabilities the protocol now represents natively.
 - Build one skill-only Agent Plugins 1.0 package named `dcs` with a root `plugin.json`.
 - Do not add legacy or client-specific plugin manifests.
 - Keep one repository Codex marketplace file that exposes the portable plugin.
