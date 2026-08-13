@@ -209,6 +209,21 @@ class SkillValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "unsupported top-level"):
                 sync.validate_agent_manifest(skill)
 
+    def test_rejects_whitespace_agent_label(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            agents = skill / "agents"
+            agents.mkdir()
+            (agents / "openai.yaml").write_text(
+                "interface:\n"
+                '  display_name: " "\n'
+                '  short_description: "Example skill description"\n',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "display_name"):
+                sync.validate_agent_manifest(skill)
+
 
 class CheckoutTests(unittest.TestCase):
     def test_shared_repository_ref_uses_one_clone(self) -> None:

@@ -283,10 +283,12 @@ def validate_agent_manifest(directory: Path) -> None:
     if not isinstance(interface, dict) or set(interface) - interface_fields:
         raise SyncError(f"{path} must contain a supported interface object")
     for field in ("display_name", "short_description"):
-        if not isinstance(interface.get(field), str) or not interface[field]:
+        if not isinstance(interface.get(field), str) or not interface[field].strip():
             raise SyncError(f"{path} interface.{field} must be a non-empty string")
     default_prompt = interface.get("default_prompt")
-    if default_prompt is not None and (not isinstance(default_prompt, str) or not default_prompt):
+    if default_prompt is not None and (
+        not isinstance(default_prompt, str) or not default_prompt.strip()
+    ):
         raise SyncError(f"{path} interface.default_prompt must be a non-empty string")
     brand_color = interface.get("brand_color")
     if brand_color is not None and (
