@@ -251,6 +251,7 @@ class LockTests(unittest.TestCase):
 
             with (
                 mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", registry),
                 mock.patch.object(sync, "UPSTREAM_LOCK", lock),
                 mock.patch.object(sync, "checkout", return_value=(source, "c" * 40, "b" * 40)),
             ):
@@ -271,6 +272,19 @@ class LockTests(unittest.TestCase):
                 self.assertRaisesRegex(sync.SyncError, "canonical upstreams.json"),
             ):
                 sync.synchronize(custom, write=True)
+
+    def test_custom_registry_cannot_read_canonical_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            canonical = root / "upstreams.json"
+            custom = root / "custom.json"
+
+            with (
+                mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", canonical),
+                self.assertRaisesRegex(sync.SyncError, "canonical upstreams.json"),
+            ):
+                sync.synchronize(custom, write=False)
 
     def test_lock_only_cleanup_is_reported_and_written(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

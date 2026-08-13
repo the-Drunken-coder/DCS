@@ -459,8 +459,9 @@ def plugin_version(bump: bool = False) -> str:
 
 
 def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
-    if write and registry.resolve() != DEFAULT_REGISTRY.resolve():
-        raise SyncError("synchronization writes require the canonical upstreams.json registry")
+    if registry.resolve() != DEFAULT_REGISTRY.resolve():
+        operation = "writes" if write else "checks"
+        raise SyncError(f"synchronization {operation} require the canonical upstreams.json registry")
     results: list[Result] = []
     staged: list[tuple[Path, Path]] = []
     locked = load_lock(required=False)
