@@ -111,6 +111,31 @@ class RegistryTests(unittest.TestCase):
                 sync.load_registry(registry)
 
 
+class SkillValidationTests(unittest.TestCase):
+    def test_rejects_unsupported_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            (skill / "SKILL.md").write_text(
+                "---\nname: example\ndescription: Example skill.\n"
+                "disable_model_invocation: true\n---\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "only name and description"):
+                sync.validate_skill(skill, "example")
+
+    def test_rejects_malformed_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            (skill / "SKILL.md").write_text(
+                "---\nname: example\ndescription Example skill.\n---\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "malformed YAML frontmatter"):
+                sync.validate_skill(skill, "example")
+
+
 class PortPolicyTests(unittest.TestCase):
     def test_all_thermos_ports_are_explicit_only(self) -> None:
         root = Path(__file__).resolve().parents[1]

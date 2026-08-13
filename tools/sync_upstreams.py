@@ -182,7 +182,7 @@ def reject_symlinks(root: Path) -> None:
             raise SyncError(f"{root} contains a symlink: {path.relative_to(root)}")
 
 
-def validate_skill(directory: Path, expected_name: str) -> None:
+def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> None:
     skill_file = directory / "SKILL.md"
     if not skill_file.is_file():
         raise SyncError(f"{directory} must contain SKILL.md")
@@ -200,8 +200,12 @@ def validate_skill(directory: Path, expected_name: str) -> None:
     fields: dict[str, str] = {}
     for line in lines[1:end]:
         key, separator, value = line.partition(":")
-        if separator:
-            fields[key.strip()] = value.strip().strip("\"'")
+        key = key.strip()
+        if not separator or not key or key in fields:
+            raise SyncError(f"{skill_file} has malformed YAML frontmatter")
+        fields[key] = value.strip().strip("\"'")
+    if strict and set(fields) != {"name", "description"}:
+        raise SyncError(f"{skill_file} frontmatter must contain only name and description")
     if fields.get("name") != expected_name:
         raise SyncError(f"{skill_file} name must be {expected_name!r}")
     if not fields.get("description"):
@@ -227,7 +231,7 @@ def checkout(upstream: Upstream, parent: Path) -> tuple[Path, str, str]:
     if not source.is_dir() or not source.resolve().is_relative_to(checkout_root.resolve()):
         raise SyncError(f"{upstream.source} is not a safe directory")
     reject_symlinks(source)
-    validate_skill(source, upstream.name)
+    validate_skill(source, upstream.name, strict=False)
     commit = git("rev-parse", "HEAD", cwd=checkout_root)
     tree = git("rev-parse", f"HEAD:{upstream.path}", cwd=checkout_root)
     return source, commit, tree

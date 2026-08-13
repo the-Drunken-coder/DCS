@@ -9,7 +9,7 @@ Run two independent review passes as concurrent Codex subagents, then synthesize
 
 ## Workflow
 
-1. Determine the review scope from the user request, pull request, current branch, or relevant changed files. Default to comparing the current branch with `main` when no scope is given.
+1. Determine the review scope from the user request, pull request, current branch, or relevant changed files. When no scope is given, use the pull request's base branch. Otherwise resolve the repository's default branch from `origin/HEAD`; if it cannot be resolved, ask the user instead of assuming a branch name.
 2. Spawn two subagents concurrently in the same turn:
    - Ask the correctness and security reviewer to load DCS's `thermo-nuclear-review` skill, inspect the scoped diff and related code, and return prioritized findings with file and line evidence.
    - Ask the maintainability reviewer to load DCS's `thermo-nuclear-code-quality-review` skill, inspect the same scope, and return prioritized findings with file and line evidence.
