@@ -136,7 +136,7 @@ class SkillValidationTests(unittest.TestCase):
                 sync.validate_skill(skill, "example")
 
     def test_rejects_invalid_yaml_scalars(self) -> None:
-        for description in ('"unterminated', "bad: value", "[not, closed"):
+        for description in ('"unterminated', "bad: value", "[not, closed", "# comment", "- item"):
             with self.subTest(description=description), tempfile.TemporaryDirectory() as temporary_directory:
                 skill = Path(temporary_directory)
                 (skill / "SKILL.md").write_text(
@@ -202,6 +202,17 @@ class LockTests(unittest.TestCase):
             sync.write_lock(expected, path)
 
             self.assertEqual(sync.load_lock(path), expected)
+
+    def test_rejects_unsafe_lock_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "upstreams.lock.json"
+            path.write_text(
+                '{"schemaVersion":1,"skills":{"../outside":"' + "a" * 40 + '"}}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "skill names"):
+                sync.load_lock(path)
 
     def test_source_tree_change_is_drift_when_packaged_files_are_identical(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

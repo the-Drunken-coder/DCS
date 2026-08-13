@@ -134,7 +134,10 @@ def load_lock(path: Path | None = None, required: bool = True) -> dict[str, str]
         raise SyncError(f"cannot read {path}: {error}") from error
     skills = data.get("skills") if isinstance(data, dict) and data.get("schemaVersion") == 1 else None
     if not isinstance(skills, dict) or any(
-        not isinstance(name, str) or not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree)
+        not isinstance(name, str)
+        or not SKILL_NAME.fullmatch(name)
+        or not isinstance(tree, str)
+        or not re.fullmatch(r"[0-9a-f]{40}", tree)
         for name, tree in skills.items()
     ):
         raise SyncError("upstreams.lock.json must contain skill names mapped to Git tree hashes")
@@ -194,7 +197,12 @@ def parse_yaml_scalar(value: str, skill_file: Path) -> object:
             if "'" in inner.replace("''", ""):
                 raise ValueError
             return inner.replace("''", "'")
-        if not value or value[0] in "[{&*!|>@`" or re.search(r":(?:\s|$)|\s#", value):
+        if (
+            not value
+            or value[0] in "[{&*!|>@`#"
+            or value.startswith(("- ", "? ", ": "))
+            or re.search(r":(?:\s|$)|\s#", value)
+        ):
             raise ValueError
         keyword = value.lower()
         if keyword in {"null", "~"}:
