@@ -2,13 +2,37 @@
 
 Drunken Coding Skills: a deliberately small, personal library of the Codex skills I actually use.
 
-The repository root is a skill-only Codex plugin. It currently contains three maintainer-owned skills:
+The repository root is a skill-only Codex plugin. It contains three maintainer-owned skills:
 
 - `file-pr` opens a focused pull request for the current branch.
 - `babysit-pr` monitors an existing pull request through reviews and CI.
 - `ask-opus` gets a second opinion from Opus through `claude -p`.
 
+It also vendors selected public skills:
+
+- `deslop` removes AI-generated code slop. DCS tracks the skill from Cursor's public `cursor/plugins` repository.
+
 Future skills belong in `skills/` and should be added only when they earn their place.
+
+## Upstream skills
+
+[`upstreams.json`](upstreams.json) is the complete administration file for third-party skills. Each entry names a public Git repository, a ref, the source directory, and its destination under `skills/`.
+
+Check for upstream changes without modifying the repository:
+
+```bash
+python3 tools/sync_upstreams.py --check
+```
+
+Synchronize registered skills locally:
+
+```bash
+python3 tools/sync_upstreams.py --sync
+```
+
+The `Upstream skills` GitHub Actions workflow runs the check every night. A changed upstream makes the run fail so normal GitHub Actions notifications can alert you. Its manual `sync` operation imports exact upstream directory contents, bumps the DCS patch version, and opens a pull request for review. It never merges the pull request.
+
+The workflow uses only the repository's built-in `GITHUB_TOKEN`. It needs no personal access token, AI API key, or other secret.
 
 ## Install
 
@@ -58,6 +82,7 @@ Clone and validate the plugin:
 git clone https://github.com/the-Drunken-coder/DCS.git
 cd DCS
 python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
+python3 tools/sync_upstreams.py --validate
 ```
 
 To test the checkout directly, replace only the DCS marketplace with the local repository and reinstall:

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "skills": [
+    {
+      "name": "deslop",
+      "repository": "cursor/plugins",
+      "ref": "main",
+      "path": "cursor-team-kit/skills/deslop",
+      "destination": "skills/deslop"
+    }
+  ]
+}
