@@ -40,8 +40,8 @@ NEVER misreport the priority / importance of issues. Be extremely thorough in tr
 
 # Final Response
 IF you have medium-to-high priority / risk findings, and there is a PR for this branch, then check the PR/MR discussion using gh/glab cli to see if there are comments from BugBot or others present.
-If so, take their findings into account. If they found issues you missed, evaluate them to determine if they are valid and include them in your report. If they found some of the same issues you did, see if there is anything from their findings that are worth incorporating into your response.
-Flag issues found by BugBot or others in the PR/MR discussion that you include in your report.
+If so, take their findings into account. If they found issues in the scoped diff that you missed, evaluate them to determine if they are valid and include them in your report. If they found some of the same issues you did, see if there is anything from their findings that are worth incorporating into your response.
+Flag only issues from the scoped diff that BugBot or others identified and that you include in your report.
 
 
 # Critical Rules

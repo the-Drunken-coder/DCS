@@ -84,6 +84,41 @@ class PortAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(sync.SyncError, "must contain one"):
             sync.adapt_candidate(self.upstream(), source, self.root / "candidate")
 
+    def test_overlay_fails_when_upstream_adds_the_same_file(self) -> None:
+        source = self.write_source()
+        self.write_port()
+        upstream_agents = source / "agents"
+        upstream_agents.mkdir()
+        (upstream_agents / "openai.yaml").write_text("upstream: true\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(sync.SyncError, "overlay collides"):
+            sync.adapt_candidate(self.upstream(), source, self.root / "candidate")
+
+
+class RegistryTests(unittest.TestCase):
+    def test_invalid_adapter_collection_raises_sync_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            registry = Path(temporary_directory) / "upstreams.json"
+            registry.write_text(
+                '{"schemaVersion":1,"skills":[{"name":"example",'
+                '"repository":"owner/repository","ref":"main",'
+                '"path":"skills/example","destination":"skills/example",'
+                '"adapter":[]}]}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "adapter is not supported"):
+                sync.load_registry(registry)
+
+
+class PortPolicyTests(unittest.TestCase):
+    def test_all_thermos_ports_are_explicit_only(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        for name in ("thermo-nuclear-code-quality-review", "thermo-nuclear-review", "thermos"):
+            with self.subTest(name=name):
+                contents = (root / "ports" / name / "agents" / "openai.yaml").read_text(encoding="utf-8")
+                self.assertEqual(contents.split("policy:\n", 1)[1], "  allow_implicit_invocation: false\n")
+
 
 class LockTests(unittest.TestCase):
     def test_round_trip(self) -> None:
@@ -102,14 +137,19 @@ class LockTests(unittest.TestCase):
             destination = root / "skills" / "example"
             source.mkdir()
             destination.mkdir(parents=True)
-            skill = "---\nname: example\ndescription: Example skill.\n---\n"
-            (source / "SKILL.md").write_text(skill, encoding="utf-8")
-            (destination / "SKILL.md").write_text(skill, encoding="utf-8")
+            source_skill = (
+                "---\nname: example\ndescription: Example skill.\n"
+                "disable-model-invocation: true\n---\n"
+            )
+            packaged_skill = "---\nname: example\ndescription: Example skill.\n---\n"
+            (source / "SKILL.md").write_text(source_skill, encoding="utf-8")
+            (destination / "SKILL.md").write_text(packaged_skill, encoding="utf-8")
             registry = root / "upstreams.json"
             registry.write_text(
                 '{"schemaVersion":1,"skills":[{"name":"example",'
                 '"repository":"owner/repository","ref":"main",'
-                '"path":"skills/example","destination":"skills/example"}]}',
+                '"path":"skills/example","destination":"skills/example",'
+                '"adapter":"cursor-manual-only"}]}',
                 encoding="utf-8",
             )
             lock = root / "upstreams.lock.json"
@@ -147,13 +187,18 @@ class LockTests(unittest.TestCase):
             destination.mkdir(parents=True)
             old_skill = "---\nname: example\ndescription: Old skill.\n---\n"
             new_skill = "---\nname: example\ndescription: New skill.\n---\n"
-            (source / "SKILL.md").write_text(new_skill, encoding="utf-8")
+            upstream_skill = (
+                "---\nname: example\ndescription: New skill.\n"
+                "disable-model-invocation: true\n---\n"
+            )
+            (source / "SKILL.md").write_text(upstream_skill, encoding="utf-8")
             (destination / "SKILL.md").write_text(old_skill, encoding="utf-8")
             registry = root / "upstreams.json"
             registry.write_text(
                 '{"schemaVersion":1,"skills":[{"name":"example",'
                 '"repository":"owner/repository","ref":"main",'
-                '"path":"skills/example","destination":"skills/example"}]}',
+                '"path":"skills/example","destination":"skills/example",'
+                '"adapter":"cursor-manual-only"}]}',
                 encoding="utf-8",
             )
             lock = root / "upstreams.lock.json"

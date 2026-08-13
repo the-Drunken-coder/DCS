@@ -54,6 +54,10 @@ class Result:
     changes: tuple[str, ...]
 
 
+def tracks_source_tree(upstream: Upstream) -> bool:
+    return bool(upstream.adapter or upstream.overlay or upstream.patch)
+
+
 def relative_path(value: object, field: str) -> PurePosixPath:
     if not isinstance(value, str) or not value.strip():
         raise SyncError(f"{field} must be a non-empty string")
@@ -100,7 +104,7 @@ def load_registry(path: Path) -> list[Upstream]:
         source_path = relative_path(raw["path"], f"{label}.path")
         destination = relative_path(raw["destination"], f"{label}.destination")
         adapter = raw.get("adapter")
-        if adapter not in {None, "cursor-manual-only"}:
+        if adapter is not None and adapter != "cursor-manual-only":
             raise SyncError(f"{label}.adapter is not supported")
         overlay = relative_path(raw["overlay"], f"{label}.overlay") if "overlay" in raw else None
         patch = relative_path(raw["patch"], f"{label}.patch") if "patch" in raw else None
@@ -270,6 +274,14 @@ def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
         if not overlay.is_dir() or not overlay.is_relative_to(ROOT.resolve()):
             raise SyncError(f"missing or unsafe port overlay: {upstream.overlay}")
         reject_symlinks(overlay)
+        collisions = sorted(
+            path.relative_to(overlay)
+            for path in overlay.rglob("*")
+            if path.is_file() and (candidate / path.relative_to(overlay)).exists()
+        )
+        if collisions:
+            paths = ", ".join(path.as_posix() for path in collisions)
+            raise SyncError(f"{upstream.source} port overlay collides with upstream files: {paths}")
         shutil.copytree(overlay, candidate, dirs_exist_ok=True)
     reject_symlinks(candidate)
     validate_skill(candidate, upstream.name)
@@ -362,10 +374,12 @@ def validate_plugin() -> None:
         raise SyncError("plugin manifest must describe the root DCS skill plugin")
     if not isinstance(manifest.get("version"), str):
         raise SyncError("plugin manifest must have a version")
-    registry_names = {upstream.name for upstream in load_registry(DEFAULT_REGISTRY)}
+    registry_names = {
+        upstream.name for upstream in load_registry(DEFAULT_REGISTRY) if tracks_source_tree(upstream)
+    }
     lock_names = set(load_lock())
     if registry_names != lock_names:
-        raise SyncError("upstreams.lock.json must contain exactly the registered skills")
+        raise SyncError("upstreams.lock.json must contain exactly the registered adapted skills")
     for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
         validate_skill(directory, directory.name)
 
@@ -405,12 +419,13 @@ def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
             destination = ROOT.joinpath(*upstream.destination.parts)
             content_changes = describe_changes(snapshot(destination), snapshot(candidate))
             changes = list(content_changes)
-            if locked.get(upstream.name) != tree:
+            if tracks_source_tree(upstream) and locked.get(upstream.name) != tree:
                 previous = locked.get(upstream.name, "untracked")
                 changes.insert(0, f"upstream tree {previous[:12]} -> {tree[:12]}")
             if content_changes:
                 staged.append((candidate, destination))
-            trees[upstream.name] = tree
+            if tracks_source_tree(upstream):
+                trees[upstream.name] = tree
             results.append(Result(upstream, commit, tree, tuple(changes)))
         if write and (staged or locked != trees):
             install_synchronization(staged, trees)
