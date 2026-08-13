@@ -121,8 +121,27 @@ class SkillValidationTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(sync.SyncError, "only name and description"):
+            with self.assertRaisesRegex(sync.SyncError, "supported Codex fields"):
                 sync.validate_skill(skill, "example")
+
+    def test_accepts_supported_codex_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            (skill / "SKILL.md").write_text(
+                "---\n"
+                "name: example\n"
+                "description: Example skill.\n"
+                "license: MIT\n"
+                "allowed-tools: Read Bash\n"
+                "metadata:\n"
+                '  version: "1.0"\n'
+                "  triggers:\n"
+                "    - example\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            sync.validate_skill(skill, "example")
 
     def test_rejects_malformed_frontmatter(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -154,7 +173,9 @@ class SkillValidationTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-                with self.assertRaisesRegex(sync.SyncError, "malformed YAML frontmatter"):
+                with self.assertRaisesRegex(
+                    sync.SyncError, "malformed YAML frontmatter|must have a description"
+                ):
                     sync.validate_skill(skill, "example")
 
     def test_rejects_invalid_agent_manifest(self) -> None:

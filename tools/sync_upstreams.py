@@ -16,6 +16,8 @@ import subprocess
 import sys
 import tempfile
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "upstreams.json"
@@ -25,6 +27,8 @@ SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 PLAIN_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
+MAX_SKILL_NAME_LENGTH = 64
 
 
 class SyncError(RuntimeError):
@@ -95,7 +99,11 @@ def load_registry(path: Path) -> list[Upstream]:
         name = raw["name"]
         repository = raw["repository"]
         ref = raw["ref"]
-        if not isinstance(name, str) or not SKILL_NAME.fullmatch(name):
+        if (
+            not isinstance(name, str)
+            or not SKILL_NAME.fullmatch(name)
+            or len(name) > MAX_SKILL_NAME_LENGTH
+        ):
             raise SyncError(f"{label}.name must be lower-case hyphen-case")
         if not isinstance(repository, str) or not GITHUB_REPOSITORY.fullmatch(repository):
             raise SyncError(f"{label}.repository must be a GitHub owner/repo")
@@ -212,103 +220,38 @@ def reject_symlinks(root: Path) -> None:
             raise SyncError(f"{root} contains a symlink: {path.relative_to(root)}")
 
 
-def parse_yaml_scalar(value: str, skill_file: Path) -> object:
-    value = value.strip()
-    try:
-        if value.startswith('"'):
-            return json.loads(value)
-        if value.startswith("'"):
-            if len(value) < 2 or not value.endswith("'"):
-                raise ValueError
-            inner = value[1:-1]
-            if "'" in inner.replace("''", ""):
-                raise ValueError
-            return inner.replace("''", "'")
-        if (
-            not value
-            or value[0] in "[{,]}#&*!|>%@`"
-            or value.startswith(("- ", "? ", ": "))
-            or re.search(r":(?:\s|$)|\s#", value)
-        ):
-            raise ValueError
-        keyword = value.lower()
-        if keyword in {"null", "~"}:
-            return None
-        if keyword in {"true", "yes", "on"}:
-            return True
-        if keyword in {"false", "no", "off"}:
-            return False
-        if re.fullmatch(r"[-+]?\d+", value):
-            return int(value)
-        if re.fullmatch(r"[-+]?\d+\.\d+", value):
-            return float(value)
-        return value
-    except (ValueError, json.JSONDecodeError) as error:
-        raise SyncError(f"{skill_file} has malformed YAML frontmatter") from error
-
-
 def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> None:
     skill_file = directory / "SKILL.md"
     if not skill_file.is_file():
         raise SyncError(f"{directory} must contain SKILL.md")
     try:
-        lines = skill_file.read_text(encoding="utf-8").splitlines()
+        contents = skill_file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise SyncError(f"cannot read {skill_file}: {error}") from error
+    lines = contents.splitlines()
     if not lines or lines[0] != "---":
         raise SyncError(f"{skill_file} must start with YAML frontmatter")
     try:
         end = lines.index("---", 1)
     except ValueError as error:
         raise SyncError(f"{skill_file} has unterminated YAML frontmatter") from error
-
-    fields: dict[str, object] = {}
-    for line in lines[1:end]:
-        key, separator, value = line.partition(":")
-        key = key.strip()
-        if not separator or not key or key in fields:
-            raise SyncError(f"{skill_file} has malformed YAML frontmatter")
-        fields[key] = parse_yaml_scalar(value, skill_file)
-    if strict and set(fields) != {"name", "description"}:
-        raise SyncError(f"{skill_file} frontmatter must contain only name and description")
+    try:
+        fields = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as error:
+        raise SyncError(f"{skill_file} has malformed YAML frontmatter") from error
+    if not isinstance(fields, dict):
+        raise SyncError(f"{skill_file} frontmatter must be an object")
+    if strict and set(fields) - SKILL_FIELDS:
+        raise SyncError(f"{skill_file} frontmatter must contain only supported Codex fields")
+    if not SKILL_NAME.fullmatch(expected_name) or len(expected_name) > MAX_SKILL_NAME_LENGTH:
+        raise SyncError(f"{skill_file} has an invalid skill name")
     if fields.get("name") != expected_name:
         raise SyncError(f"{skill_file} name must be {expected_name!r}")
-    if not isinstance(fields.get("description"), str) or not fields["description"]:
+    description = fields.get("description")
+    if not isinstance(description, str) or not description.strip():
         raise SyncError(f"{skill_file} must have a description")
-
-
-def parse_agent_manifest(path: Path) -> dict[str, dict[str, object]]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError) as error:
-        raise SyncError(f"cannot read {path}: {error}") from error
-
-    payload: dict[str, dict[str, object]] = {}
-    section: dict[str, object] | None = None
-    for line in lines:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if line.startswith("  ") and not line.startswith(("   ", "\t")):
-            if section is None:
-                raise SyncError(f"{path} has malformed agent YAML")
-            key, separator, value = line[2:].partition(":")
-            key = key.strip()
-            if not separator or not key or key in section:
-                raise SyncError(f"{path} has malformed agent YAML")
-            try:
-                section[key] = parse_yaml_scalar(value, path)
-            except SyncError as error:
-                raise SyncError(f"{path} has malformed agent YAML") from error
-            continue
-        if line[0].isspace():
-            raise SyncError(f"{path} has malformed agent YAML")
-        key, separator, value = line.partition(":")
-        key = key.strip()
-        if not separator or not key or value.strip() or key in payload:
-            raise SyncError(f"{path} has malformed agent YAML")
-        section = {}
-        payload[key] = section
-    return payload
+    if "<" in description or ">" in description or len(description) > 1024:
+        raise SyncError(f"{skill_file} has an invalid description")
 
 
 def validate_agent_manifest(directory: Path) -> None:
@@ -317,7 +260,14 @@ def validate_agent_manifest(directory: Path) -> None:
         return
     if not path.is_file():
         raise SyncError(f"{path} must be a file")
-    payload = parse_agent_manifest(path)
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as error:
+        raise SyncError(f"cannot read {path}: {error}") from error
+    except yaml.YAMLError as error:
+        raise SyncError(f"{path} has malformed agent YAML") from error
+    if not isinstance(payload, dict):
+        raise SyncError(f"{path} must contain an object")
     if set(payload) - {"interface", "policy", "dependencies"}:
         raise SyncError(f"{path} contains unsupported top-level fields")
 
@@ -330,7 +280,7 @@ def validate_agent_manifest(directory: Path) -> None:
         "brand_color",
         "default_prompt",
     }
-    if interface is None or set(interface) - interface_fields:
+    if not isinstance(interface, dict) or set(interface) - interface_fields:
         raise SyncError(f"{path} must contain a supported interface object")
     for field in ("display_name", "short_description"):
         if not isinstance(interface.get(field), str) or not interface[field]:
@@ -359,6 +309,8 @@ def validate_agent_manifest(directory: Path) -> None:
 
     policy = payload.get("policy")
     if policy is not None:
+        if not isinstance(policy, dict):
+            raise SyncError(f"{path} policy must be an object")
         if set(policy) - {"allow_implicit_invocation"}:
             raise SyncError(f"{path} contains unsupported policy fields")
         value = policy.get("allow_implicit_invocation")
@@ -366,8 +318,11 @@ def validate_agent_manifest(directory: Path) -> None:
             raise SyncError(f"{path} policy.allow_implicit_invocation must be a boolean")
 
     dependencies = payload.get("dependencies")
-    if dependencies is not None and set(dependencies) - {"tools"}:
-        raise SyncError(f"{path} contains unsupported dependency fields")
+    if dependencies is not None:
+        if not isinstance(dependencies, dict):
+            raise SyncError(f"{path} dependencies must be an object")
+        if set(dependencies) - {"tools"}:
+            raise SyncError(f"{path} contains unsupported dependency fields")
 
 
 def checkout(

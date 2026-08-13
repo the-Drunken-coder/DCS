@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install synchronizer dependencies
+        run: python3 -m pip install --disable-pip-version-check -r tools/requirements.txt
       - name: Test synchronizer
         run: python3 -m unittest discover -s tests -v
       - name: Validate DCS
@@ -41,6 +43,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Install synchronizer dependencies
+        run: python3 -m pip install --disable-pip-version-check -r tools/requirements.txt
       - name: Synchronize upstream skills
         id: sync
         run: >-

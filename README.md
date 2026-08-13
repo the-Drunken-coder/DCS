@@ -23,6 +23,12 @@ Future skills belong in `skills/` and should be added only when they earn their 
 
 Most skills are exact mirrors. Adapted skills can also name a small adapter, patch, or file overlay under `ports/`. The Thermos ports remove Cursor-only invocation metadata, replace Cursor's subagent syntax with Codex instructions, and add Codex UI metadata. [`upstreams.lock.json`](upstreams.lock.json) records each adapted upstream Git tree, so a change remains visible even when an adapter produces identical packaged output. Its `managedSkills` list tracks every generated skill so removing a registry entry also removes its packaged directory.
 
+Install the synchronizer's YAML dependency once:
+
+```bash
+python3 -m pip install -r tools/requirements.txt
+```
+
 Check for upstream changes without modifying the repository:
 
 ```bash
