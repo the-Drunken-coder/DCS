@@ -1,8 +1,13 @@
 # DCS
 
-Drunken Coding Skills: a deliberately small, personal library of the Codex skills I actually use.
+Drunken Coding Skills: a deliberately small, personal library of the Agent Skills I actually use.
 
-The repository root is a skill-only Codex plugin. It contains three maintainer-owned skills:
+The repository root is a skill-only [Agent Plugins 1.0](https://agent-plugins.org/specification)
+package. Its root [`plugin.json`](plugin.json) declares the portable format, and clients discover
+skills from `skills/` by convention. There is intentionally no legacy client-specific plugin
+manifest.
+
+The package contains three maintainer-owned skills:
 
 - `file-pr` opens a focused pull request for the current branch.
 - `babysit-pr` monitors an existing pull request through reviews and CI.
@@ -48,7 +53,12 @@ The workflow uses only the repository's built-in `GITHUB_TOKEN`. It needs no per
 
 ## Install
 
-Add this repository as a marketplace, then install and enable DCS:
+The portable specification leaves installation and distribution to each client. DCS keeps
+`.agents/plugins/marketplace.json` only as its Codex distribution index; it is not part of the
+plugin package format.
+
+With a Codex build that supports Agent Plugins 1.0, add this repository as a marketplace, then
+install and enable DCS:
 
 ```bash
 codex plugin marketplace add the-Drunken-coder/DCS --ref main
@@ -93,7 +103,6 @@ Clone and validate the plugin:
 ```bash
 git clone https://github.com/the-Drunken-coder/DCS.git
 cd DCS
-python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 python3 -m unittest discover -s tests -v
 python3 tools/sync_upstreams.py --validate
 python3 tools/sync_upstreams.py --check
@@ -105,6 +114,5 @@ To test the checkout directly, replace only the DCS marketplace with the local r
 codex plugin remove dcs@dcs
 codex plugin marketplace remove dcs
 codex plugin marketplace add "$PWD"
-python3 ~/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py .
 codex plugin add dcs@dcs
 ```

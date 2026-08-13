@@ -1,3 +1,4 @@
+import json
 from pathlib import Path, PurePosixPath
 import tempfile
 import unittest
@@ -296,10 +297,11 @@ class RegistryTests(unittest.TestCase):
     def test_plugin_validation_requires_registered_skill_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            manifest = root / ".codex-plugin" / "plugin.json"
-            manifest.parent.mkdir()
+            manifest = root / "plugin.json"
             manifest.write_text(
-                '{"name":"dcs","version":"1.0.0","skills":"./skills/"}',
+                '{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",'
+                '"name":"dcs","version":"1.0.0","description":"Example plugin.",'
+                '"author":{"name":"Example"}}',
                 encoding="utf-8",
             )
             (root / "skills").mkdir()
@@ -323,6 +325,51 @@ class RegistryTests(unittest.TestCase):
                 sync.validate_plugin()
 
 
+class PluginManifestTests(unittest.TestCase):
+    def write_manifest(self, root: Path, **overrides: object) -> Path:
+        manifest: dict[str, object] = {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "dcs",
+            "version": "1.0.0",
+            "description": "Example plugin.",
+            "author": {"name": "Example"},
+        }
+        manifest.update(overrides)
+        path = root / "plugin.json"
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        return path
+
+    def test_accepts_agent_plugins_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = self.write_manifest(Path(temporary_directory))
+
+            manifest = sync.validate_plugin_manifest(path)
+
+            self.assertEqual(manifest["name"], "dcs")
+
+    def test_rejects_legacy_component_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = self.write_manifest(Path(temporary_directory), skills="./skills/")
+
+            with self.assertRaisesRegex(sync.SyncError, "unsupported Agent Plugins fields: skills"):
+                sync.validate_plugin_manifest(path)
+
+    def test_rejects_missing_agent_plugins_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = self.write_manifest(Path(temporary_directory), **{"$schema": "legacy"})
+
+            with self.assertRaisesRegex(sync.SyncError, "Agent Plugins 1.0 schema"):
+                sync.validate_plugin_manifest(path)
+
+    def test_rejects_invalid_optional_metadata(self) -> None:
+        for field in ("homepage", "repository", "license"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary_directory:
+                path = self.write_manifest(Path(temporary_directory), **{field: 1})
+
+                with self.assertRaisesRegex(sync.SyncError, f"{field} must be a string"):
+                    sync.validate_plugin_manifest(path)
+
+
 class SkillValidationTests(unittest.TestCase):
     def test_rejects_unsupported_frontmatter(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -333,10 +380,10 @@ class SkillValidationTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(sync.SyncError, "supported Codex fields"):
+            with self.assertRaisesRegex(sync.SyncError, "supported Agent Skills fields"):
                 sync.validate_skill(skill, "example")
 
-    def test_accepts_supported_codex_frontmatter(self) -> None:
+    def test_accepts_supported_agent_skills_frontmatter(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             skill = Path(temporary_directory)
             (skill / "SKILL.md").write_text(
