@@ -431,9 +431,10 @@ def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
             if tracks_source_tree(upstream):
                 trees[upstream.name] = tree
             results.append(Result(upstream, commit, tree, tuple(changes)))
-        if write and (staged or locked != trees):
+        lock_changed = locked != trees
+        if write and (staged or lock_changed):
             install_synchronization(staged, trees)
-    return results, any(result.changes for result in results)
+    return results, lock_changed or any(result.changes for result in results)
 
 
 def report(results: list[Result], changed: bool, version: str) -> str:

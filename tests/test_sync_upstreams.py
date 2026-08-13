@@ -203,6 +203,38 @@ class LockTests(unittest.TestCase):
             ):
                 sync.synchronize(custom, write=True)
 
+    def test_lock_only_cleanup_is_reported_and_written(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source"
+            destination = root / "skills" / "example"
+            source.mkdir()
+            destination.mkdir(parents=True)
+            skill = "---\nname: example\ndescription: Example skill.\n---\n"
+            (source / "SKILL.md").write_text(skill, encoding="utf-8")
+            (destination / "SKILL.md").write_text(skill, encoding="utf-8")
+            registry = root / "upstreams.json"
+            registry.write_text(
+                '{"schemaVersion":1,"skills":[{"name":"example",'
+                '"repository":"owner/repository","ref":"main",'
+                '"path":"skills/example","destination":"skills/example"}]}',
+                encoding="utf-8",
+            )
+            lock = root / "upstreams.lock.json"
+            sync.write_lock({"example": "a" * 40}, lock)
+
+            with (
+                mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", registry),
+                mock.patch.object(sync, "UPSTREAM_LOCK", lock),
+                mock.patch.object(sync, "checkout", return_value=(source, "c" * 40, "b" * 40)),
+            ):
+                results, changed = sync.synchronize(registry, write=True)
+
+            self.assertTrue(changed)
+            self.assertEqual(results[0].changes, ())
+            self.assertEqual(sync.load_lock(lock), {})
+
     def test_failed_lock_write_rolls_back_all_skill_updates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
