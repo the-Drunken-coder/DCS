@@ -182,6 +182,36 @@ def reject_symlinks(root: Path) -> None:
             raise SyncError(f"{root} contains a symlink: {path.relative_to(root)}")
 
 
+def parse_yaml_scalar(value: str, skill_file: Path) -> object:
+    value = value.strip()
+    try:
+        if value.startswith('"'):
+            return json.loads(value)
+        if value.startswith("'"):
+            if len(value) < 2 or not value.endswith("'"):
+                raise ValueError
+            inner = value[1:-1]
+            if "'" in inner.replace("''", ""):
+                raise ValueError
+            return inner.replace("''", "'")
+        if not value or value[0] in "[{&*!|>@`" or re.search(r":(?:\s|$)|\s#", value):
+            raise ValueError
+        keyword = value.lower()
+        if keyword in {"null", "~"}:
+            return None
+        if keyword in {"true", "yes", "on"}:
+            return True
+        if keyword in {"false", "no", "off"}:
+            return False
+        if re.fullmatch(r"[-+]?\d+", value):
+            return int(value)
+        if re.fullmatch(r"[-+]?\d+\.\d+", value):
+            return float(value)
+        return value
+    except (ValueError, json.JSONDecodeError) as error:
+        raise SyncError(f"{skill_file} has malformed YAML frontmatter") from error
+
+
 def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> None:
     skill_file = directory / "SKILL.md"
     if not skill_file.is_file():
@@ -197,42 +227,53 @@ def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> 
     except ValueError as error:
         raise SyncError(f"{skill_file} has unterminated YAML frontmatter") from error
 
-    fields: dict[str, str] = {}
+    fields: dict[str, object] = {}
     for line in lines[1:end]:
         key, separator, value = line.partition(":")
         key = key.strip()
         if not separator or not key or key in fields:
             raise SyncError(f"{skill_file} has malformed YAML frontmatter")
-        fields[key] = value.strip().strip("\"'")
+        fields[key] = parse_yaml_scalar(value, skill_file)
     if strict and set(fields) != {"name", "description"}:
         raise SyncError(f"{skill_file} frontmatter must contain only name and description")
     if fields.get("name") != expected_name:
         raise SyncError(f"{skill_file} name must be {expected_name!r}")
-    if not fields.get("description"):
+    if not isinstance(fields.get("description"), str) or not fields["description"]:
         raise SyncError(f"{skill_file} must have a description")
 
 
-def checkout(upstream: Upstream, parent: Path) -> tuple[Path, str, str]:
-    checkout_root = parent / upstream.name
-    url = f"https://github.com/{upstream.repository}.git"
-    git(
-        "clone",
-        "--quiet",
-        "--depth=1",
-        "--filter=blob:none",
-        "--sparse",
-        "--branch",
-        upstream.ref,
-        url,
-        str(checkout_root),
-    )
-    git("sparse-checkout", "set", str(upstream.path), cwd=checkout_root)
+def checkout(
+    upstream: Upstream,
+    parent: Path,
+    cache: dict[tuple[str, str], tuple[Path, str]] | None = None,
+) -> tuple[Path, str, str]:
+    cache = cache if cache is not None else {}
+    key = (upstream.repository, upstream.ref)
+    if key in cache:
+        checkout_root, commit = cache[key]
+        git("sparse-checkout", "add", str(upstream.path), cwd=checkout_root)
+    else:
+        checkout_root = parent / f"source-{len(cache)}"
+        url = f"https://github.com/{upstream.repository}.git"
+        git(
+            "clone",
+            "--quiet",
+            "--depth=1",
+            "--filter=blob:none",
+            "--sparse",
+            "--branch",
+            upstream.ref,
+            url,
+            str(checkout_root),
+        )
+        git("sparse-checkout", "set", str(upstream.path), cwd=checkout_root)
+        commit = git("rev-parse", "HEAD", cwd=checkout_root)
+        cache[key] = (checkout_root, commit)
     source = checkout_root.joinpath(*upstream.path.parts)
     if not source.is_dir() or not source.resolve().is_relative_to(checkout_root.resolve()):
         raise SyncError(f"{upstream.source} is not a safe directory")
     reject_symlinks(source)
     validate_skill(source, upstream.name, strict=False)
-    commit = git("rev-parse", "HEAD", cwd=checkout_root)
     tree = git("rev-parse", f"HEAD:{upstream.path}", cwd=checkout_root)
     return source, commit, tree
 
@@ -336,7 +377,9 @@ def replace_directory(source: Path, destination: Path) -> None:
             raise
 
 
-def install_synchronization(staged: list[tuple[Path, Path]], trees: dict[str, str]) -> None:
+def install_synchronization(
+    staged: list[tuple[Path, Path]], trees: dict[str, str], removed: set[str]
+) -> None:
     skills = ROOT / "skills"
     previous_lock = UPSTREAM_LOCK.read_bytes() if UPSTREAM_LOCK.exists() else None
     with tempfile.TemporaryDirectory(prefix=".skills-sync-", dir=ROOT) as temp:
@@ -351,14 +394,18 @@ def install_synchronization(staged: list[tuple[Path, Path]], trees: dict[str, st
             if incoming.exists():
                 shutil.rmtree(incoming)
             shutil.copytree(source, incoming)
+        for name in removed:
+            incoming = incoming_skills / name
+            if incoming.exists():
+                shutil.rmtree(incoming)
 
         try:
-            if staged:
+            if staged or removed:
                 replace_directory(incoming_skills, skills)
             write_lock(trees)
         except Exception as error:
             try:
-                if staged:
+                if staged or removed:
                     replace_directory(previous_skills, skills)
                 if previous_lock is None:
                     UPSTREAM_LOCK.unlink(missing_ok=True)
@@ -410,14 +457,18 @@ def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
     staged: list[tuple[Path, Path]] = []
     locked = load_lock(required=False)
     trees: dict[str, str] = {}
+    upstreams = load_registry(registry)
+    registered_names = {upstream.name for upstream in upstreams}
+    removed = set(locked) - registered_names
     with tempfile.TemporaryDirectory(prefix="dcs-upstreams-") as temp:
         temp_root = Path(temp)
         checkout_root = temp_root / "checkouts"
         checkout_root.mkdir()
         candidate_root = temp_root / "candidates"
         candidate_root.mkdir()
-        for upstream in load_registry(registry):
-            source, commit, tree = checkout(upstream, checkout_root)
+        checkout_cache: dict[tuple[str, str], tuple[Path, str]] = {}
+        for upstream in upstreams:
+            source, commit, tree = checkout(upstream, checkout_root, checkout_cache)
             candidate = candidate_root / upstream.name
             adapt_candidate(upstream, source, candidate)
             destination = ROOT.joinpath(*upstream.destination.parts)
@@ -432,8 +483,8 @@ def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
                 trees[upstream.name] = tree
             results.append(Result(upstream, commit, tree, tuple(changes)))
         lock_changed = locked != trees
-        if write and (staged or lock_changed):
-            install_synchronization(staged, trees)
+        if write and (staged or lock_changed or removed):
+            install_synchronization(staged, trees, removed)
     return results, lock_changed or any(result.changes for result in results)
 
 

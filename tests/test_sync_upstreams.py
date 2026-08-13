@@ -135,6 +135,54 @@ class SkillValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "malformed YAML frontmatter"):
                 sync.validate_skill(skill, "example")
 
+    def test_rejects_invalid_yaml_scalars(self) -> None:
+        for description in ('"unterminated', "bad: value", "[not, closed"):
+            with self.subTest(description=description), tempfile.TemporaryDirectory() as temporary_directory:
+                skill = Path(temporary_directory)
+                (skill / "SKILL.md").write_text(
+                    f"---\nname: example\ndescription: {description}\n---\n",
+                    encoding="utf-8",
+                )
+
+                with self.assertRaisesRegex(sync.SyncError, "malformed YAML frontmatter"):
+                    sync.validate_skill(skill, "example")
+
+
+class CheckoutTests(unittest.TestCase):
+    def test_shared_repository_ref_uses_one_clone(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            parent = Path(temporary_directory)
+            checkout = parent / "source-0"
+            for name in ("alpha", "beta"):
+                skill = checkout / "skills" / name
+                skill.mkdir(parents=True)
+                (skill / "SKILL.md").write_text(
+                    f"---\nname: {name}\ndescription: Example skill.\n---\n",
+                    encoding="utf-8",
+                )
+            cache: dict[tuple[str, str], tuple[Path, str]] = {}
+
+            def fake_git(*arguments: str, cwd: Path | None = None) -> str:
+                if arguments[:2] == ("rev-parse", "HEAD"):
+                    return "c" * 40
+                if arguments[0] == "rev-parse":
+                    return "d" * 40
+                return ""
+
+            def upstream(name: str) -> sync.Upstream:
+                return sync.Upstream(
+                    name, "owner/repository", "main", PurePosixPath(f"skills/{name}"),
+                    PurePosixPath(f"skills/{name}"), None, None, None
+                )
+
+            with mock.patch.object(sync, "git", side_effect=fake_git) as git:
+                sync.checkout(upstream("alpha"), parent, cache)
+                sync.checkout(upstream("beta"), parent, cache)
+
+            clones = [call for call in git.call_args_list if call.args and call.args[0] == "clone"]
+            self.assertEqual(len(clones), 1)
+            git.assert_any_call("sparse-checkout", "add", "skills/beta", cwd=checkout)
+
 
 class PortPolicyTests(unittest.TestCase):
     def test_all_thermos_ports_are_explicit_only(self) -> None:
@@ -233,6 +281,32 @@ class LockTests(unittest.TestCase):
 
             self.assertTrue(changed)
             self.assertEqual(results[0].changes, ())
+            self.assertEqual(sync.load_lock(lock), {})
+
+    def test_deregistered_adapted_skill_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            destination = root / "skills" / "retired"
+            destination.mkdir(parents=True)
+            (destination / "SKILL.md").write_text(
+                "---\nname: retired\ndescription: Retired skill.\n---\n",
+                encoding="utf-8",
+            )
+            registry = root / "upstreams.json"
+            registry.write_text('{"schemaVersion":1,"skills":[]}', encoding="utf-8")
+            lock = root / "upstreams.lock.json"
+            sync.write_lock({"retired": "a" * 40}, lock)
+
+            with (
+                mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", registry),
+                mock.patch.object(sync, "UPSTREAM_LOCK", lock),
+            ):
+                results, changed = sync.synchronize(registry, write=True)
+
+            self.assertTrue(changed)
+            self.assertEqual(results, [])
+            self.assertFalse(destination.exists())
             self.assertEqual(sync.load_lock(lock), {})
 
     def test_failed_lock_write_rolls_back_all_skill_updates(self) -> None:
