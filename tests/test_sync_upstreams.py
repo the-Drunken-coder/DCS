@@ -312,6 +312,34 @@ class SkillValidationTests(unittest.TestCase):
 
 
 class CheckoutTests(unittest.TestCase):
+    def test_rejects_symlinked_source_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            parent = Path(temporary_directory)
+            checkout = parent / "source-0"
+            target = checkout / "skills" / "target"
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text(
+                "---\nname: example\ndescription: Example skill.\n---\n",
+                encoding="utf-8",
+            )
+            (checkout / "skills" / "example").symlink_to(target, target_is_directory=True)
+            upstream = sync.Upstream(
+                "example",
+                "owner/repository",
+                "main",
+                PurePosixPath("skills/example"),
+                PurePosixPath("skills/example"),
+                None,
+                None,
+                None,
+            )
+
+            with (
+                mock.patch.object(sync, "git", return_value="c" * 40),
+                self.assertRaisesRegex(sync.SyncError, "not a safe directory"),
+            ):
+                sync.checkout(upstream, parent, {})
+
     def test_shared_repository_ref_uses_one_clone(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             parent = Path(temporary_directory)

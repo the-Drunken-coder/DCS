@@ -355,7 +355,11 @@ def checkout(
         commit = git("rev-parse", "HEAD", cwd=checkout_root)
         cache[key] = (checkout_root, commit)
     source = checkout_root.joinpath(*upstream.path.parts)
-    if not source.is_dir() or not source.resolve().is_relative_to(checkout_root.resolve()):
+    if (
+        source.is_symlink()
+        or not source.is_dir()
+        or not source.resolve().is_relative_to(checkout_root.resolve())
+    ):
         raise SyncError(f"{upstream.source} is not a safe directory")
     reject_symlinks(source)
     validate_skill(source, upstream.name, strict=False)
