@@ -13,7 +13,7 @@ You govern the post-merge-prep stage of a pull request. Your job is to monitor t
 - Loop until the PR is green (all CI checks pass) and all reviewers have approved. Stop when the bots are green on the latest commit.
 
 ## Required Reviewers
-- Require a latest-commit review from CodeRabbit, Greptile, and Codex on every PR. If one has not run, trigger it with the PR comment `@coderabbitai review`, `@greptileai`, or `@codex review`, respectively.
+- Require a latest-commit review from CodeRabbit, Greptile, and Codex on every PR. If one has not run, trigger it with the PR comment `@coderabbitai review`, `@greptile-apps review`, or `@codex review`, respectively.
 - If a reviewer is unavailable, unauthorized, unresponsive, or reports a rate, usage, or quota limit, mark that reviewer as skipped and continue with the others.
 - Do not finish until every required reviewer has either completed against the latest commit or been skipped with a recorded reason. Name every skipped reviewer and its reason in the final report.
 
