@@ -369,6 +369,13 @@ class PluginManifestTests(unittest.TestCase):
                 with self.assertRaisesRegex(sync.SyncError, "plain x.y.z semver"):
                     sync.validate_plugin_manifest(path)
 
+    def test_rejects_non_ascii_version_digits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = self.write_manifest(Path(temporary_directory), version="1٢.0.0")
+
+            with self.assertRaisesRegex(sync.SyncError, "plain x.y.z semver"):
+                sync.validate_plugin_manifest(path)
+
     def test_rejects_invalid_optional_metadata(self) -> None:
         for field in ("homepage", "repository", "license"):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary_directory:
