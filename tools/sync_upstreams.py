@@ -519,6 +519,13 @@ def validate_plugin() -> None:
         raise SyncError("upstreams.lock.json must contain exactly the registered adapted skills")
     if registry_names != managed:
         raise SyncError("upstreams.lock.json managedSkills must contain exactly the registered skills")
+    missing = sorted(
+        upstream.name
+        for upstream in upstreams
+        if not ROOT.joinpath(*upstream.destination.parts).is_dir()
+    )
+    if missing:
+        raise SyncError(f"missing registered skill directories: {', '.join(missing)}")
     for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
         validate_skill(directory, directory.name)
         validate_agent_manifest(directory)

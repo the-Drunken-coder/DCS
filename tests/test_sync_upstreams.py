@@ -165,6 +165,35 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "adapter is not supported"):
                 sync.load_registry(registry)
 
+    def test_plugin_validation_requires_registered_skill_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            manifest = root / ".codex-plugin" / "plugin.json"
+            manifest.parent.mkdir()
+            manifest.write_text(
+                '{"name":"dcs","version":"1.0.0","skills":"./skills/"}',
+                encoding="utf-8",
+            )
+            (root / "skills").mkdir()
+            registry = root / "upstreams.json"
+            registry.write_text(
+                '{"schemaVersion":1,"skills":[{"name":"example",'
+                '"repository":"owner/repository","ref":"main",'
+                '"path":"skills/example","destination":"skills/example"}]}',
+                encoding="utf-8",
+            )
+            lock = root / "upstreams.lock.json"
+            sync.write_lock({}, lock, managed={"example"})
+
+            with (
+                mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "PLUGIN_MANIFEST", manifest),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", registry),
+                mock.patch.object(sync, "UPSTREAM_LOCK", lock),
+                self.assertRaisesRegex(sync.SyncError, "missing registered skill directories: example"),
+            ):
+                sync.validate_plugin()
+
 
 class SkillValidationTests(unittest.TestCase):
     def test_rejects_unsupported_frontmatter(self) -> None:
