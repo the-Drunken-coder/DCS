@@ -347,6 +347,49 @@ class PluginManifestTests(unittest.TestCase):
 
             self.assertEqual(manifest["name"], "dcs")
 
+    def test_preserves_codex_interface_metadata(self) -> None:
+        manifest = sync.validate_plugin_manifest(sync.PLUGIN_MANIFEST)
+
+        self.assertEqual(
+            manifest["extensions"],
+            {
+                "com.openai": {
+                    "interface": {
+                        "displayName": "DCS",
+                        "shortDescription": "Drunken Coding Skills for Codex.",
+                        "longDescription": (
+                            "A deliberately small, personal library of Codex skills."
+                        ),
+                        "developerName": "The Drunken Coder",
+                        "category": "Productivity",
+                        "capabilities": [],
+                        "defaultPrompt": "Show me the skills available from DCS.",
+                    }
+                }
+            },
+        )
+
+    def test_accepts_reverse_domain_extension_namespace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = self.write_manifest(
+                Path(temporary_directory), extensions={"com.example.client": {}}
+            )
+
+            sync.validate_plugin_manifest(path)
+
+    def test_rejects_invalid_extension_namespaces(self) -> None:
+        for namespace in ("codex", "com..openai", "com.-openai"):
+            with (
+                self.subTest(namespace=namespace),
+                tempfile.TemporaryDirectory() as temporary_directory,
+            ):
+                path = self.write_manifest(
+                    Path(temporary_directory), extensions={namespace: {}}
+                )
+
+                with self.assertRaisesRegex(sync.SyncError, "reverse-domain namespaces"):
+                    sync.validate_plugin_manifest(path)
+
     def test_rejects_legacy_component_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = self.write_manifest(Path(temporary_directory), skills="./skills/")

@@ -39,6 +39,9 @@ PLUGIN_FIELDS = {
 SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 PLAIN_SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+EXTENSION_NAMESPACE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$"
+)
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
 MAX_SKILL_NAME_LENGTH = 64
@@ -611,6 +614,10 @@ def validate_plugin_manifest(path: Path) -> dict[str, object]:
         or any(not isinstance(value, dict) for value in extensions.values())
     ):
         raise SyncError("plugin manifest extensions must contain namespace objects")
+    if isinstance(extensions, dict) and any(
+        not EXTENSION_NAMESPACE.fullmatch(namespace) for namespace in extensions
+    ):
+        raise SyncError("plugin manifest extension keys must use reverse-domain namespaces")
     return manifest
 
 

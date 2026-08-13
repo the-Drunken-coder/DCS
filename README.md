@@ -57,8 +57,8 @@ The portable specification leaves installation and distribution to each client. 
 `.agents/plugins/marketplace.json` only as its Codex distribution index; it is not part of the
 plugin package format.
 
-With a Codex build that supports Agent Plugins 1.0, add this repository as a marketplace, then
-install and enable DCS:
+Portable Agent Plugins installation requires Codex 0.147.0 or later. Add this repository as a
+marketplace, then install and enable DCS:
 
 ```bash
 codex plugin marketplace add the-Drunken-coder/DCS --ref main
@@ -107,6 +107,10 @@ python3 -m unittest discover -s tests -v
 python3 tools/sync_upstreams.py --validate
 python3 tools/sync_upstreams.py --check
 ```
+
+The repository validator also enforces DCS release policy: a plain Semantic Versioning release,
+a non-empty description, and a named author. Those requirements are intentionally stricter than
+the minimum portable manifest schema.
 
 To test the checkout directly, replace only the DCS marketplace with the local repository and reinstall:
 

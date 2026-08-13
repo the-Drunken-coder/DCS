@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "dcs",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A deliberately small collection of personal Agent Skills.",
   "author": {
     "name": "The Drunken Coder"
@@ -12,5 +12,18 @@
     "agent-skills",
     "code-review",
     "codex"
-  ]
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "DCS",
+        "shortDescription": "Drunken Coding Skills for Codex.",
+        "longDescription": "A deliberately small, personal library of Codex skills.",
+        "developerName": "The Drunken Coder",
+        "category": "Productivity",
+        "capabilities": [],
+        "defaultPrompt": "Show me the skills available from DCS."
+      }
+    }
+  }
 }
