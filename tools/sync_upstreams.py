@@ -129,12 +129,15 @@ def load_registry(path: Path) -> list[Upstream]:
             raise SyncError(f"{label}.destination must be skills/{name}")
         if adapter == PSTACK_ADAPTER and (
             name != "pstack"
+            or repository != "cursor/plugins"
+            or ref != "main"
             or source_path != PurePosixPath("pstack")
             or overlay != PurePosixPath("ports/pstack")
             or patch is not None
         ):
             raise SyncError(
-                f"{label} pstack adapter must use pstack -> skills/pstack with ports/pstack"
+                f"{label} pstack adapter must use cursor/plugins@main:pstack -> "
+                "skills/pstack with ports/pstack"
             )
         if name in names:
             raise SyncError(f"{label}.name is duplicated")
@@ -344,15 +347,17 @@ def validate_pstack_source(directory: Path) -> None:
     manifest_path = directory / ".cursor-plugin" / "plugin.json"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise SyncError(f"cannot read pstack manifest: {error}") from error
+    if not isinstance(manifest, dict):
+        raise SyncError("pstack manifest must contain an object")
     if manifest.get("name") != "pstack" or manifest.get("license") != "MIT":
         raise SyncError("pstack source must retain its named MIT plugin manifest")
 
     mode = directory / "skills" / "poteto-mode" / "SKILL.md"
     try:
         mode_contents = mode.read_text(encoding="utf-8")
-    except OSError as error:
+    except (OSError, UnicodeDecodeError) as error:
         raise SyncError(f"cannot read pstack poteto-mode: {error}") from error
     if not all(
         marker in mode_contents

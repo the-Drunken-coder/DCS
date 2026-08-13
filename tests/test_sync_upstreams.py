@@ -105,6 +105,10 @@ class PortAdapterTests(unittest.TestCase):
             "---\nname: pstack\ndescription: Codex port.\n---\n",
             encoding="utf-8",
         )
+        references = port / "references"
+        references.mkdir()
+        for name in ("principles.md", "processes.md"):
+            (references / name).write_text(f"# {name}\n", encoding="utf-8")
 
     def test_adapter_removes_cursor_metadata_and_applies_port(self) -> None:
         source = self.write_source()
@@ -143,10 +147,17 @@ class PortAdapterTests(unittest.TestCase):
 
         sync.adapt_candidate(self.pstack_upstream(), source, candidate)
 
-        self.assertEqual(
-            (candidate / "SKILL.md").read_text(encoding="utf-8"),
-            "---\nname: pstack\ndescription: Codex port.\n---\n",
-        )
+        port = self.root / "ports" / "pstack"
+        for relative in (
+            "SKILL.md",
+            "references/principles.md",
+            "references/processes.md",
+        ):
+            with self.subTest(relative=relative):
+                self.assertEqual(
+                    (candidate / relative).read_bytes(),
+                    (port / relative).read_bytes(),
+                )
         self.assertFalse((candidate / ".cursor-plugin").exists())
         self.assertFalse((candidate / "skills").exists())
 
@@ -157,6 +168,29 @@ class PortAdapterTests(unittest.TestCase):
         mode.write_text(mode.read_text(encoding="utf-8").replace("## Principles", "## Values"))
 
         with self.assertRaisesRegex(sync.SyncError, "entry point changed"):
+            sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
+
+    def test_pstack_adapter_rejects_non_object_manifest(self) -> None:
+        source = self.write_pstack_source()
+        self.write_pstack_port()
+        (source / ".cursor-plugin" / "plugin.json").write_text("[]", encoding="utf-8")
+
+        with self.assertRaisesRegex(sync.SyncError, "manifest must contain an object"):
+            sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
+
+    def test_pstack_adapter_wraps_invalid_utf8(self) -> None:
+        source = self.write_pstack_source()
+        self.write_pstack_port()
+        manifest = source / ".cursor-plugin" / "plugin.json"
+        original_manifest = manifest.read_bytes()
+        manifest.write_bytes(b"\xff")
+
+        with self.assertRaisesRegex(sync.SyncError, "cannot read pstack manifest"):
+            sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
+
+        manifest.write_bytes(original_manifest)
+        (source / "skills" / "poteto-mode" / "SKILL.md").write_bytes(b"\xff")
+        with self.assertRaisesRegex(sync.SyncError, "cannot read pstack poteto-mode"):
             sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
 
     def test_exact_mirror_rejects_invalid_agent_manifest_before_install(self) -> None:
@@ -239,6 +273,25 @@ class RegistryTests(unittest.TestCase):
 
             with self.assertRaisesRegex(sync.SyncError, "pstack adapter must use"):
                 sync.load_registry(registry)
+
+    def test_pstack_adapter_requires_the_registered_upstream(self) -> None:
+        invalid_upstreams = (("lookalike/plugins", "main"), ("cursor/plugins", "release"))
+        for repository, ref in invalid_upstreams:
+            with (
+                self.subTest(repository=repository, ref=ref),
+                tempfile.TemporaryDirectory() as temporary_directory,
+            ):
+                registry = Path(temporary_directory) / "upstreams.json"
+                registry.write_text(
+                    '{"schemaVersion":1,"skills":[{"name":"pstack",'
+                    f'"repository":"{repository}","ref":"{ref}",'
+                    '"path":"pstack","destination":"skills/pstack",'
+                    '"adapter":"pstack-single-skill","overlay":"ports/pstack"}]}',
+                    encoding="utf-8",
+                )
+
+                with self.assertRaisesRegex(sync.SyncError, "pstack adapter must use"):
+                    sync.load_registry(registry)
 
     def test_plugin_validation_requires_registered_skill_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
