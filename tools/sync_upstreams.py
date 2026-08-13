@@ -22,10 +22,26 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "upstreams.json"
 UPSTREAM_LOCK = ROOT / "upstreams.lock.json"
-PLUGIN_MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
+PLUGIN_MANIFEST = ROOT / "plugin.json"
+PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+PLUGIN_FIELDS = {
+    "$schema",
+    "name",
+    "version",
+    "description",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "extensions",
+}
 SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-PLAIN_SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+PLAIN_SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+EXTENSION_NAMESPACE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$"
+)
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
 MAX_SKILL_NAME_LENGTH = 64
@@ -258,7 +274,7 @@ def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> 
     if not isinstance(fields, dict):
         raise SyncError(f"{skill_file} frontmatter must be an object")
     if strict and set(fields) - SKILL_FIELDS:
-        raise SyncError(f"{skill_file} frontmatter must contain only supported Codex fields")
+        raise SyncError(f"{skill_file} frontmatter must contain only supported Agent Skills fields")
     if not SKILL_NAME.fullmatch(expected_name) or len(expected_name) > MAX_SKILL_NAME_LENGTH:
         raise SyncError(f"{skill_file} has an invalid skill name")
     if fields.get("name") != expected_name:
@@ -552,15 +568,63 @@ def install_synchronization(
             raise
 
 
-def validate_plugin() -> None:
+def validate_plugin_manifest(path: Path) -> dict[str, object]:
     try:
-        manifest = json.loads(PLUGIN_MANIFEST.read_text(encoding="utf-8"))
+        manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise SyncError(f"cannot read plugin manifest: {error}") from error
-    if manifest.get("name") != "dcs" or manifest.get("skills") != "./skills/":
-        raise SyncError("plugin manifest must describe the root DCS skill plugin")
-    if not isinstance(manifest.get("version"), str):
-        raise SyncError("plugin manifest must have a version")
+    if not isinstance(manifest, dict):
+        raise SyncError("plugin manifest must contain an object")
+    unknown_fields = set(manifest) - PLUGIN_FIELDS
+    if unknown_fields:
+        raise SyncError(
+            "plugin manifest contains unsupported Agent Plugins fields: "
+            + ", ".join(sorted(unknown_fields))
+        )
+    if manifest.get("$schema") != PLUGIN_SCHEMA:
+        raise SyncError("plugin manifest must declare the Agent Plugins 1.0 schema")
+    if manifest.get("name") != "dcs":
+        raise SyncError("plugin manifest name must be 'dcs'")
+    version = manifest.get("version")
+    if not isinstance(version, str) or not PLAIN_SEMVER.fullmatch(version):
+        raise SyncError("plugin manifest version must use plain x.y.z semver")
+    description = manifest.get("description")
+    if not isinstance(description, str) or not description.strip():
+        raise SyncError("plugin manifest must have a description")
+    author = manifest.get("author")
+    if (
+        not isinstance(author, dict)
+        or set(author) - {"name", "email", "url"}
+        or any(not isinstance(value, str) for value in author.values())
+        or not isinstance(author.get("name"), str)
+        or not author["name"].strip()
+    ):
+        raise SyncError("plugin manifest must have a supported author")
+    for field in ("homepage", "repository", "license"):
+        if field in manifest and not isinstance(manifest[field], str):
+            raise SyncError(f"plugin manifest {field} must be a string")
+    keywords = manifest.get("keywords")
+    if keywords is not None and (
+        not isinstance(keywords, list) or any(not isinstance(value, str) for value in keywords)
+    ):
+        raise SyncError("plugin manifest keywords must be an array of strings")
+    extensions = manifest.get("extensions")
+    if extensions is not None and (
+        not isinstance(extensions, dict)
+        or any(not isinstance(value, dict) for value in extensions.values())
+    ):
+        raise SyncError("plugin manifest extensions must contain namespace objects")
+    if isinstance(extensions, dict) and any(
+        not EXTENSION_NAMESPACE.fullmatch(namespace) for namespace in extensions
+    ):
+        raise SyncError("plugin manifest extension keys must use reverse-domain namespaces")
+    return manifest
+
+
+def validate_plugin() -> None:
+    validate_plugin_manifest(PLUGIN_MANIFEST)
+    if (ROOT / ".codex-plugin" / "plugin.json").exists():
+        raise SyncError("legacy .codex-plugin/plugin.json must be absent")
     upstreams = load_registry(DEFAULT_REGISTRY)
     registry_names = {upstream.name for upstream in upstreams}
     adapted_names = {upstream.name for upstream in upstreams if tracks_source_tree(upstream)}

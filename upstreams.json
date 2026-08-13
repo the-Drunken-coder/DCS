@@ -33,8 +33,7 @@
       "path": "thermos/skills/thermo-nuclear-review",
       "destination": "skills/thermo-nuclear-review",
       "adapter": "cursor-manual-only",
-      "overlay": "ports/thermo-nuclear-review",
-      "patch": "ports/thermo-nuclear-review.patch"
+      "overlay": "ports/thermo-nuclear-review"
     },
     {
       "name": "thermos",

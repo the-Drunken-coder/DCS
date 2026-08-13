@@ -62,7 +62,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add .codex-plugin/plugin.json skills upstreams.lock.json
+          git add plugin.json skills upstreams.lock.json
           git commit -m "chore: sync upstream skills"
           git push origin "$branch"
           compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1"
