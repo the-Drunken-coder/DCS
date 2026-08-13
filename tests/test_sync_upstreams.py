@@ -125,6 +125,54 @@ class LockTests(unittest.TestCase):
             self.assertTrue(changed)
             self.assertEqual(results[0].changes, (f"upstream tree {'a' * 12} -> {'b' * 12}",))
 
+    def test_custom_registry_cannot_overwrite_canonical_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            canonical = root / "upstreams.json"
+            custom = root / "custom.json"
+
+            with (
+                mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", canonical),
+                self.assertRaisesRegex(sync.SyncError, "canonical upstreams.json"),
+            ):
+                sync.synchronize(custom, write=True)
+
+    def test_failed_lock_write_rolls_back_all_skill_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source"
+            destination = root / "skills" / "example"
+            source.mkdir()
+            destination.mkdir(parents=True)
+            old_skill = "---\nname: example\ndescription: Old skill.\n---\n"
+            new_skill = "---\nname: example\ndescription: New skill.\n---\n"
+            (source / "SKILL.md").write_text(new_skill, encoding="utf-8")
+            (destination / "SKILL.md").write_text(old_skill, encoding="utf-8")
+            registry = root / "upstreams.json"
+            registry.write_text(
+                '{"schemaVersion":1,"skills":[{"name":"example",'
+                '"repository":"owner/repository","ref":"main",'
+                '"path":"skills/example","destination":"skills/example"}]}',
+                encoding="utf-8",
+            )
+            lock = root / "upstreams.lock.json"
+            sync.write_lock({"example": "a" * 40}, lock)
+            previous_lock = lock.read_bytes()
+
+            with (
+                mock.patch.object(sync, "ROOT", root),
+                mock.patch.object(sync, "DEFAULT_REGISTRY", registry),
+                mock.patch.object(sync, "UPSTREAM_LOCK", lock),
+                mock.patch.object(sync, "checkout", return_value=(source, "c" * 40, "b" * 40)),
+                mock.patch.object(sync, "write_lock", side_effect=OSError("injected lock failure")),
+                self.assertRaisesRegex(OSError, "injected lock failure"),
+            ):
+                sync.synchronize(registry, write=True)
+
+            self.assertEqual((destination / "SKILL.md").read_text(encoding="utf-8"), old_skill)
+            self.assertEqual(lock.read_bytes(), previous_lock)
+
 
 if __name__ == "__main__":
     unittest.main()

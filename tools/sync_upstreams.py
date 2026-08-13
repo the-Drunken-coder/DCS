@@ -139,7 +139,22 @@ def load_lock(path: Path | None = None, required: bool = True) -> dict[str, str]
 
 def write_lock(trees: dict[str, str], path: Path | None = None) -> None:
     path = path or UPSTREAM_LOCK
-    path.write_text(json.dumps({"schemaVersion": 1, "skills": trees}, indent=2) + "\n", encoding="utf-8")
+    content = json.dumps({"schemaVersion": 1, "skills": trees}, indent=2) + "\n"
+    write_bytes_atomic(path, content.encode())
+
+
+def write_bytes_atomic(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as file:
+            file.write(content)
+        temporary.chmod(path.stat().st_mode if path.exists() else 0o644)
+        temporary.replace(path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def git(*arguments: str, cwd: Path | None = None) -> str:
@@ -305,6 +320,39 @@ def replace_directory(source: Path, destination: Path) -> None:
             raise
 
 
+def install_synchronization(staged: list[tuple[Path, Path]], trees: dict[str, str]) -> None:
+    skills = ROOT / "skills"
+    previous_lock = UPSTREAM_LOCK.read_bytes() if UPSTREAM_LOCK.exists() else None
+    with tempfile.TemporaryDirectory(prefix=".skills-sync-", dir=ROOT) as temp:
+        transaction = Path(temp)
+        incoming_skills = transaction / "incoming"
+        previous_skills = transaction / "previous"
+        shutil.copytree(skills, incoming_skills)
+        shutil.copytree(skills, previous_skills)
+        for source, destination in staged:
+            relative = destination.relative_to(skills)
+            incoming = incoming_skills / relative
+            if incoming.exists():
+                shutil.rmtree(incoming)
+            shutil.copytree(source, incoming)
+
+        try:
+            if staged:
+                replace_directory(incoming_skills, skills)
+            write_lock(trees)
+        except Exception as error:
+            try:
+                if staged:
+                    replace_directory(previous_skills, skills)
+                if previous_lock is None:
+                    UPSTREAM_LOCK.unlink(missing_ok=True)
+                else:
+                    write_bytes_atomic(UPSTREAM_LOCK, previous_lock)
+            except Exception as rollback_error:
+                raise SyncError(f"synchronization failed and rollback also failed: {rollback_error}") from error
+            raise
+
+
 def validate_plugin() -> None:
     try:
         manifest = json.loads(PLUGIN_MANIFEST.read_text(encoding="utf-8"))
@@ -338,6 +386,8 @@ def plugin_version(bump: bool = False) -> str:
 
 
 def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
+    if write and registry.resolve() != DEFAULT_REGISTRY.resolve():
+        raise SyncError("synchronization writes require the canonical upstreams.json registry")
     results: list[Result] = []
     staged: list[tuple[Path, Path]] = []
     locked = load_lock(required=False)
@@ -362,11 +412,8 @@ def synchronize(registry: Path, write: bool) -> tuple[list[Result], bool]:
                 staged.append((candidate, destination))
             trees[upstream.name] = tree
             results.append(Result(upstream, commit, tree, tuple(changes)))
-        if write:
-            for source, destination in staged:
-                replace_directory(source, destination)
-            if locked != trees:
-                write_lock(trees)
+        if write and (staged or locked != trees):
+            install_synchronization(staged, trees)
     return results, any(result.changes for result in results)
 
 
