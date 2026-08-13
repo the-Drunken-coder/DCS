@@ -306,8 +306,8 @@ def validate_agent_manifest(directory: Path) -> None:
         except SyncError as error:
             raise SyncError(f"{path} interface.{field} must be a relative file path") from error
         icon = directory.joinpath(*relative.parts).resolve()
-        if not icon.is_relative_to(ROOT.resolve()) or not icon.is_file():
-            raise SyncError(f"{path} interface.{field} must point inside the plugin")
+        if not icon.is_relative_to(directory.resolve()) or not icon.is_file():
+            raise SyncError(f"{path} interface.{field} must point inside the skill")
 
     policy = payload.get("policy")
     if policy is not None:

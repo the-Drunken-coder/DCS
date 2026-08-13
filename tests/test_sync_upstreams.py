@@ -119,6 +119,36 @@ class PortAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(sync.SyncError, "malformed agent YAML"):
             sync.adapt_candidate(upstream, source, self.root / "candidate")
 
+    def test_exact_mirror_accepts_candidate_icon(self) -> None:
+        source = self.write_source(marker=False)
+        assets = source / "assets"
+        assets.mkdir()
+        (assets / "icon.svg").write_text("<svg/>\n", encoding="utf-8")
+        agents = source / "agents"
+        agents.mkdir()
+        (agents / "openai.yaml").write_text(
+            "interface:\n"
+            '  display_name: "Example"\n'
+            '  short_description: "Example skill description"\n'
+            '  icon_small: "assets/icon.svg"\n',
+            encoding="utf-8",
+        )
+        upstream = sync.Upstream(
+            name="example",
+            repository="owner/repository",
+            ref="main",
+            path=PurePosixPath("skills/example"),
+            destination=PurePosixPath("skills/example"),
+            adapter=None,
+            overlay=None,
+            patch=None,
+        )
+        candidate = self.root / "candidate"
+
+        sync.adapt_candidate(upstream, source, candidate)
+
+        self.assertTrue((candidate / "assets" / "icon.svg").is_file())
+
 
 class RegistryTests(unittest.TestCase):
     def test_invalid_adapter_collection_raises_sync_error(self) -> None:
