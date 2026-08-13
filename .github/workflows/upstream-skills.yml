@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Check only, or synchronize changes into a pull request
+        description: Check only, or synchronize changes onto an update branch
         required: true
         default: check
         type: choice
@@ -37,7 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - name: Synchronize upstream skills
@@ -46,11 +45,8 @@ jobs:
           python3 tools/sync_upstreams.py
           --sync
           --bump-plugin-version
-          --report "$RUNNER_TEMP/upstream-sync.md"
-      - name: Open update pull request
+      - name: Push update branch
         if: steps.sync.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           branch="automation/sync-upstream-skills-${GITHUB_RUN_ID}"
           git config user.name "github-actions[bot]"
@@ -59,8 +55,8 @@ jobs:
           git add .codex-plugin/plugin.json skills
           git commit -m "chore: sync upstream skills"
           git push origin "$branch"
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "chore: sync upstream skills" \
-            --body-file "$RUNNER_TEMP/upstream-sync.md"
+          compare_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1"
+          {
+            printf '\n## Open the update pull request\n\n'
+            printf '[Review the imported changes and open a pull request](%s).\n' "$compare_url"
+          } >> "$GITHUB_STEP_SUMMARY"

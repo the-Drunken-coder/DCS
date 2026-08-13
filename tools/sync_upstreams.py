@@ -280,7 +280,7 @@ def report(results: list[Result], changed: bool, version: str) -> str:
             "",
             f"Plugin version: `{version}`",
             "",
-            "Review all imported instruction changes before merging. This automation never merges the pull request.",
+            "Review all imported instruction changes before opening and merging a pull request. This automation never changes main.",
             "",
         ]
     )
@@ -307,7 +307,6 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--validate", action="store_true")
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--bump-plugin-version", action="store_true")
-    parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     if args.bump_plugin_version and not args.sync:
         parser.error("--bump-plugin-version requires --sync")
@@ -334,8 +333,6 @@ def main() -> int:
             print(f"  {change}")
 
     markdown = report(results, changed, version)
-    if args.report:
-        args.report.write_text(markdown, encoding="utf-8")
     write_automation_output(results, changed, version, markdown)
     if args.check and changed:
         print("Upstream drift detected. Run the manual sync workflow to open an update PR.", file=sys.stderr)
