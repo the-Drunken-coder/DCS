@@ -139,7 +139,7 @@ def load_lock_state(
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         if required:
-            raise SyncError(f"missing upstream lock: {path}")
+            raise SyncError(f"missing upstream lock: {path}") from None
         return {}, set()
     except (OSError, json.JSONDecodeError) as error:
         raise SyncError(f"cannot read {path}: {error}") from error

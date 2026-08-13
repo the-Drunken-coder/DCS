@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+import yaml
+
 from tools import sync_upstreams as sync
 
 
@@ -350,8 +352,9 @@ class PortPolicyTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         for name in ("thermo-nuclear-code-quality-review", "thermo-nuclear-review", "thermos"):
             with self.subTest(name=name):
-                contents = (root / "ports" / name / "agents" / "openai.yaml").read_text(encoding="utf-8")
-                self.assertEqual(contents.split("policy:\n", 1)[1], "  allow_implicit_invocation: false\n")
+                manifest = root / "ports" / name / "agents" / "openai.yaml"
+                payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+                self.assertIs(payload["policy"]["allow_implicit_invocation"], False)
 
 
 class LockTests(unittest.TestCase):
