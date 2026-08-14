@@ -2,6 +2,13 @@
   "schemaVersion": 1,
   "skills": [
     {
+      "name": "anti-ui-slop",
+      "repository": "uizze/uizze",
+      "ref": "main",
+      "path": "skills/anti-ui-slop",
+      "destination": "skills/anti-ui-slop"
+    },
+    {
       "name": "deslop",
       "repository": "cursor/plugins",
       "ref": "main",
