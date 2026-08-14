@@ -16,6 +16,7 @@ The package contains three maintainer-owned skills:
 It also tracks selected public skills:
 
 - `deslop` removes AI-generated code slop. DCS tracks the skill from Cursor's public `cursor/plugins` repository.
+- `frontend-design` guides distinctive, intentional UI design grounded in the product's subject and audience.
 - `pstack` provides one explicit, evidence-first engineering workflow distilled from Lauren Tan's pstack principles, quality rubric, and core playbooks.
 - `thermo-nuclear-review` performs a strict correctness and security branch audit.
 - `thermo-nuclear-code-quality-review` performs a strict maintainability and structure audit.

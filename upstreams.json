@@ -9,6 +9,13 @@
       "destination": "skills/deslop"
     },
     {
+      "name": "frontend-design",
+      "repository": "anthropics/skills",
+      "ref": "main",
+      "path": "skills/frontend-design",
+      "destination": "skills/frontend-design"
+    },
+    {
       "name": "pstack",
       "repository": "cursor/plugins",
       "ref": "main",
