@@ -7,6 +7,7 @@
     "thermos": "56e7ab69f83a54852b54512b536c95ea45ecf1e1"
   },
   "managedSkills": [
+    "anti-ui-slop",
     "deslop",
     "pstack",
     "thermo-nuclear-code-quality-review",
