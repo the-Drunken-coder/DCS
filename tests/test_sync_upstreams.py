@@ -613,6 +613,17 @@ class PortPolicyTests(unittest.TestCase):
         payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
         self.assertIs(payload["policy"]["allow_implicit_invocation"], False)
 
+    def test_architecture_orchestrator_uses_codex_native_skill_instructions(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        skill = (root / "skills" / "improve-codebase-architecture" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("Skill tool", skill)
+        for name in ("codebase-design", "domain-modeling", "grilling"):
+            with self.subTest(name=name):
+                self.assertIn(f"bundled `{name}` skill", skill)
+
     def test_all_thermos_ports_are_explicit_only(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for name in ("thermo-nuclear-code-quality-review", "thermo-nuclear-review", "thermos"):

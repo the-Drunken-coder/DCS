@@ -56,7 +56,8 @@
       "path": "skills/engineering/improve-codebase-architecture",
       "destination": "skills/improve-codebase-architecture",
       "adapter": "cursor-manual-only",
-      "overlay": "ports/mattpocock-skills"
+      "overlay": "ports/mattpocock-skills",
+      "patch": "ports/improve-codebase-architecture.patch"
     },
     {
       "name": "pstack",
