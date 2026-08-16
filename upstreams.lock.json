@@ -1,9 +1,11 @@
 {
   "schemaVersion": 1,
   "skills": {
+    "codebase-design": "20b7cd1dd1fe5b0bd37ba72649f3a29375574b5b",
     "domain-modeling": "05c3244ec75b7548bbc2b635b0624bb9f70369c3",
     "grill-with-docs": "eedaf2562c83155115e9c649fa3ecaac2e10e81d",
     "grilling": "0d40d978f1a588971a11ea7ae85b208e78102dc3",
+    "improve-codebase-architecture": "db546af0f3419a8bd261a83708d4cb33d2a915cd",
     "pstack": "038335f7e6bf894d50d8cab3a09bf4067299711d",
     "thermo-nuclear-code-quality-review": "d9c8935dd560b3b6f5941247d04a1843f8c7cc35",
     "thermo-nuclear-review": "b222e50771b6bc6f7d2b926b86da2342f160bb79",
@@ -11,10 +13,12 @@
   },
   "managedSkills": [
     "anti-ui-slop",
+    "codebase-design",
     "deslop",
     "domain-modeling",
     "grill-with-docs",
     "grilling",
+    "improve-codebase-architecture",
     "pstack",
     "thermo-nuclear-code-quality-review",
     "thermo-nuclear-review",
