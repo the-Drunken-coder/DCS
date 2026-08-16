@@ -9,6 +9,14 @@
       "destination": "skills/anti-ui-slop"
     },
     {
+      "name": "codebase-design",
+      "repository": "mattpocock/skills",
+      "ref": "main",
+      "path": "skills/engineering/codebase-design",
+      "destination": "skills/codebase-design",
+      "overlay": "ports/mattpocock-skills"
+    },
+    {
       "name": "deslop",
       "repository": "cursor/plugins",
       "ref": "main",
@@ -40,6 +48,15 @@
       "path": "skills/productivity/grilling",
       "destination": "skills/grilling",
       "overlay": "ports/grilling"
+    },
+    {
+      "name": "improve-codebase-architecture",
+      "repository": "mattpocock/skills",
+      "ref": "main",
+      "path": "skills/engineering/improve-codebase-architecture",
+      "destination": "skills/improve-codebase-architecture",
+      "adapter": "cursor-manual-only",
+      "overlay": "ports/mattpocock-skills"
     },
     {
       "name": "pstack",
