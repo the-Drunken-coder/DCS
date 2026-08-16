@@ -1,0 +1,5 @@
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -6 +6 @@
+-Call the Skill tool twice, for "grilling" and "domain-modeling".
++Load and follow both bundled skills for this request: `grilling` to drive the interview and `domain-modeling` to update the glossary and ADRs as decisions crystallize.

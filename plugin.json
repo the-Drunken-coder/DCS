@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "dcs",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "A deliberately small collection of personal Agent Skills.",
   "author": {
     "name": "The Drunken Coder"
