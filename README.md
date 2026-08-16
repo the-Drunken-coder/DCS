@@ -17,6 +17,7 @@ It also tracks selected public skills:
 
 - `anti-ui-slop` helps agents build product-specific interfaces and check them for generic UI defaults.
 - `deslop` removes AI-generated code slop. DCS tracks the skill from Cursor's public `cursor/plugins` repository.
+- `grill-with-docs` stress-tests a plan or design while sharpening its domain language and recording durable decisions. DCS also packages the `grilling` and `domain-modeling` skills it composes.
 - `pstack` provides one explicit, evidence-first engineering workflow distilled from Lauren Tan's pstack principles, quality rubric, and core playbooks.
 - `thermo-nuclear-review` performs a strict correctness and security branch audit.
 - `thermo-nuclear-code-quality-review` performs a strict maintainability and structure audit.
@@ -28,7 +29,7 @@ Future skills belong in `skills/` and should be added only when they earn their 
 
 [`upstreams.json`](upstreams.json) is the complete administration file for third-party skills. Each entry names a public Git repository, a ref, the source directory, and its destination under `skills/`.
 
-Most skills are exact mirrors. Adapted skills can also name a small adapter, patch, or file overlay under `ports/`. The pstack adapter tracks the complete upstream plugin but packages one Codex-native `pstack` skill instead of its Cursor-specific skill stack, agents, model router, and automations. It verifies pstack's identity and main router before packaging the port. The Thermos ports remove Cursor-only invocation metadata, replace Cursor's subagent syntax with Codex instructions, and add Codex UI metadata. [`upstreams.lock.json`](upstreams.lock.json) records each adapted upstream Git tree, so a change remains visible even when an adapter produces identical packaged output. Its `managedSkills` list tracks every generated skill so removing a registry entry also removes its packaged directory.
+Most skills are exact mirrors. Adapted skills can also name a small adapter, patch, or file overlay under `ports/`. The pstack adapter tracks the complete upstream plugin but packages one Codex-native `pstack` skill instead of its Cursor-specific skill stack, agents, model router, and automations. It verifies pstack's identity and main router before packaging the port. The `grill-with-docs` port preserves manual invocation while replacing its generic Skill-tool handoff with Codex instructions. The Thermos ports remove Cursor-only invocation metadata, replace Cursor's subagent syntax with Codex instructions, and add Codex UI metadata. [`upstreams.lock.json`](upstreams.lock.json) records each adapted upstream Git tree, so a change remains visible even when an adapter produces identical packaged output. Its `managedSkills` list tracks every generated skill so removing a registry entry also removes its packaged directory.
 
 Install the synchronizer's YAML dependency once:
 

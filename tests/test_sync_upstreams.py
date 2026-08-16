@@ -607,6 +607,12 @@ class CheckoutTests(unittest.TestCase):
 
 
 class PortPolicyTests(unittest.TestCase):
+    def test_grill_with_docs_is_explicit_only(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        manifest = root / "skills" / "grill-with-docs" / "agents" / "openai.yaml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        self.assertIs(payload["policy"]["allow_implicit_invocation"], False)
+
     def test_all_thermos_ports_are_explicit_only(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for name in ("thermo-nuclear-code-quality-review", "thermo-nuclear-review", "thermos"):

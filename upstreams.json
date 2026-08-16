@@ -16,6 +16,32 @@
       "destination": "skills/deslop"
     },
     {
+      "name": "domain-modeling",
+      "repository": "mattpocock/skills",
+      "ref": "main",
+      "path": "skills/engineering/domain-modeling",
+      "destination": "skills/domain-modeling",
+      "overlay": "ports/domain-modeling"
+    },
+    {
+      "name": "grill-with-docs",
+      "repository": "mattpocock/skills",
+      "ref": "main",
+      "path": "skills/engineering/grill-with-docs",
+      "destination": "skills/grill-with-docs",
+      "adapter": "cursor-manual-only",
+      "overlay": "ports/grill-with-docs",
+      "patch": "ports/grill-with-docs.patch"
+    },
+    {
+      "name": "grilling",
+      "repository": "mattpocock/skills",
+      "ref": "main",
+      "path": "skills/productivity/grilling",
+      "destination": "skills/grilling",
+      "overlay": "ports/grilling"
+    },
+    {
       "name": "pstack",
       "repository": "cursor/plugins",
       "ref": "main",
