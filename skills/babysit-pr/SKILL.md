@@ -10,12 +10,12 @@ You govern the post-merge-prep stage of a pull request. Your job is to monitor t
 - Poll for new review comments and CI checks.
 - Only act on items **newer than the latest push**. Stay quiet when nothing is new.
 - Rebase or pull `main` as needed.
-- Loop until the PR is green (all CI checks pass) and all reviewers have approved. Stop when the bots are green on the latest commit.
+- Loop until all required CI checks pass and all actionable review feedback on the latest commit is resolved.
 
-## Required Reviewers
-- Require a latest-commit review from CodeRabbit, Greptile, and Codex on every PR. If one has not run, trigger it with the PR comment `@coderabbitai review`, `@greptile-apps review`, or `@codex review`, respectively.
-- If a reviewer is unavailable, unauthorized, unresponsive, or reports a rate, usage, or quota limit, mark that reviewer as skipped and continue with the others.
-- Do not finish until every required reviewer has either completed against the latest commit or been skipped with a recorded reason. Name every skipped reviewer and its reason in the final report.
+## Optional Review Tools
+- Use CodeRabbit, Greptile, Codex, and Macroscope when they are already available to the repository. To request a latest-commit review, comment `@coderabbitai review`, `@greptile-apps review`, `@codex review`, or `@macroscope-app review`, respectively.
+- Treat these tools as optional enhancements, not readiness gates. Do not install or configure them unless the user asks.
+- If a tool is unavailable, unauthorized, unresponsive, or reports a rate, usage, or quota limit, record the reason and continue. Do not block completion or keep polling solely for an optional review tool.
 
 ## Handling Checks and Reviews
 - **Verify Findings:** Verify every bot finding against the source before changing code. Distinguish real repo failures from infrastructure flakes.
