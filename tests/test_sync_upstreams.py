@@ -293,6 +293,68 @@ class PortAdapterTests(unittest.TestCase):
 
         self.assertTrue((candidate / "assets" / "icon.svg").is_file())
 
+    def test_exact_mirror_updates_flow_style_agent_manifest(self) -> None:
+        source = self.write_source(marker=False)
+        agents = source / "agents"
+        agents.mkdir()
+        (agents / "openai.yaml").write_text(
+            'interface: {display_name: "Example", '
+            'short_description: "Example skill description"}\n',
+            encoding="utf-8",
+        )
+        upstream = sync.Upstream(
+            name="example",
+            repository="owner/repository",
+            ref="main",
+            path=PurePosixPath("skills/example"),
+            destination=PurePosixPath("skills/example"),
+            adapter=None,
+            overlay=None,
+            patch=None,
+        )
+        candidate = self.root / "candidate"
+
+        sync.adapt_candidate(upstream, source, candidate)
+
+        manifest = yaml.safe_load(
+            (candidate / "agents" / "openai.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["interface"]["display_name"], "DCS: Example")
+
+    def test_exact_mirror_updates_block_scalar_agent_manifest(self) -> None:
+        source = self.write_source(marker=False)
+        agents = source / "agents"
+        agents.mkdir()
+        (agents / "openai.yaml").write_text(
+            "interface:\n"
+            "  display_name: |-\n"
+            "    Example\n"
+            "    display_name: detail\n"
+            '  short_description: "Example skill description"\n',
+            encoding="utf-8",
+        )
+        upstream = sync.Upstream(
+            name="example",
+            repository="owner/repository",
+            ref="main",
+            path=PurePosixPath("skills/example"),
+            destination=PurePosixPath("skills/example"),
+            adapter=None,
+            overlay=None,
+            patch=None,
+        )
+        candidate = self.root / "candidate"
+
+        sync.adapt_candidate(upstream, source, candidate)
+
+        manifest = yaml.safe_load(
+            (candidate / "agents" / "openai.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            manifest["interface"]["display_name"],
+            "DCS: Example\ndisplay_name: detail",
+        )
+
 
 class RegistryTests(unittest.TestCase):
     def test_invalid_adapter_collection_raises_sync_error(self) -> None:
@@ -602,6 +664,21 @@ class SkillValidationTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(sync.SyncError, "must start with 'DCS: '"):
+                sync.validate_agent_manifest(skill)
+
+    def test_rejects_dcs_prefix_without_display_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            agents = skill / "agents"
+            agents.mkdir()
+            (agents / "openai.yaml").write_text(
+                "interface:\n"
+                '  display_name: "DCS: "\n'
+                '  short_description: "Example skill description"\n',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "include a display name"):
                 sync.validate_agent_manifest(skill)
 
 

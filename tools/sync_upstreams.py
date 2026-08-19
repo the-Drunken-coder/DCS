@@ -17,6 +17,7 @@ import sys
 import tempfile
 
 import yaml
+from yaml.nodes import MappingNode, ScalarNode
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -321,9 +322,14 @@ def validate_agent_manifest(directory: Path, *, require_dcs_prefix: bool = True)
     for field in ("display_name", "short_description"):
         if not isinstance(interface.get(field), str) or not interface[field].strip():
             raise SyncError(f"{path} interface.{field} must be a non-empty string")
-    if require_dcs_prefix and not interface["display_name"].startswith(DCS_DISPLAY_PREFIX):
+    display_name = interface["display_name"]
+    if require_dcs_prefix and (
+        not display_name.startswith(DCS_DISPLAY_PREFIX)
+        or not display_name[len(DCS_DISPLAY_PREFIX) :].strip()
+    ):
         raise SyncError(
-            f"{path} interface.display_name must start with {DCS_DISPLAY_PREFIX!r}"
+            f"{path} interface.display_name must start with {DCS_DISPLAY_PREFIX!r} "
+            "and include a display name"
         )
     default_prompt = interface.get("default_prompt")
     if default_prompt is not None and (
@@ -390,19 +396,35 @@ def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
         return
 
     contents = path.read_text(encoding="utf-8")
-    display_name_field = re.compile(
-        r"^([ \t]+display_name[ \t]*:[ \t]*)[^\r\n]*", re.MULTILINE
-    )
-    matches = list(display_name_field.finditer(contents))
-    if len(matches) != 1:
+    document = yaml.compose(contents)
+    if not isinstance(document, MappingNode):
+        raise SyncError(f"{path} must contain an object")
+    interface_nodes = [
+        value
+        for key, value in document.value
+        if isinstance(key, ScalarNode) and key.value == "interface"
+    ]
+    if len(interface_nodes) != 1 or not isinstance(interface_nodes[0], MappingNode):
+        raise SyncError(f"{path} must contain one interface object")
+    display_name_nodes = [
+        value
+        for key, value in interface_nodes[0].value
+        if isinstance(key, ScalarNode) and key.value == "display_name"
+    ]
+    if len(display_name_nodes) != 1 or not isinstance(display_name_nodes[0], ScalarNode):
         raise SyncError(f"{path} must contain one interface.display_name field")
-    contents = display_name_field.sub(
-        lambda match: (
-            match.group(1)
-            + json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)
-        ),
-        contents,
-        count=1,
+
+    node = display_name_nodes[0]
+    original = contents[node.start_mark.index : node.end_mark.index]
+    replacement = json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)
+    if original.endswith("\r\n"):
+        replacement += "\r\n"
+    elif original.endswith("\n"):
+        replacement += "\n"
+    contents = (
+        contents[: node.start_mark.index]
+        + replacement
+        + contents[node.end_mark.index :]
     )
     path.write_text(contents, encoding="utf-8")
 
