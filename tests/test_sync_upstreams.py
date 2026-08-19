@@ -9,6 +9,17 @@ import yaml
 from tools import sync_upstreams as sync
 
 
+def write_packaged_agent_manifest(skill: Path) -> None:
+    agents = skill / "agents"
+    agents.mkdir()
+    (agents / "openai.yaml").write_text(
+        "interface:\n"
+        '  display_name: "DCS: Example"\n'
+        '  short_description: "Example skill."\n',
+        encoding="utf-8",
+    )
+
+
 class PortAdapterTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -122,7 +133,37 @@ class PortAdapterTests(unittest.TestCase):
         self.assertNotIn("disable-model-invocation", skill)
         self.assertIn("Codex instructions.", skill)
         self.assertFalse((candidate / "SKILL.md.orig").exists())
-        self.assertTrue((candidate / "agents" / "openai.yaml").is_file())
+        manifest = yaml.safe_load(
+            (candidate / "agents" / "openai.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["interface"]["display_name"], "DCS: Example")
+
+    def test_exact_mirror_gets_dcs_metadata_when_upstream_has_none(self) -> None:
+        source = self.write_source(marker=False)
+        upstream = sync.Upstream(
+            name="example",
+            repository="owner/repository",
+            ref="main",
+            path=PurePosixPath("skills/example"),
+            destination=PurePosixPath("skills/example"),
+            adapter=None,
+            overlay=None,
+            patch=None,
+        )
+        candidate = self.root / "candidate"
+
+        sync.adapt_candidate(upstream, source, candidate)
+
+        manifest = yaml.safe_load(
+            (candidate / "agents" / "openai.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            manifest["interface"],
+            {
+                "display_name": "DCS: Example",
+                "short_description": "Example skill.",
+            },
+        )
 
     def test_adapter_fails_when_cursor_metadata_changes(self) -> None:
         source = self.write_source(marker=False)
@@ -541,6 +582,21 @@ class SkillValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "display_name"):
                 sync.validate_agent_manifest(skill)
 
+    def test_rejects_agent_label_without_dcs_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            skill = Path(temporary_directory)
+            agents = skill / "agents"
+            agents.mkdir()
+            (agents / "openai.yaml").write_text(
+                "interface:\n"
+                '  display_name: "Example"\n'
+                '  short_description: "Example skill description"\n',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "must start with 'DCS: '"):
+                sync.validate_agent_manifest(skill)
+
 
 class CheckoutTests(unittest.TestCase):
     def test_rejects_symlinked_source_directory(self) -> None:
@@ -607,6 +663,29 @@ class CheckoutTests(unittest.TestCase):
 
 
 class PortPolicyTests(unittest.TestCase):
+    def test_display_name_refresh_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            skill = root / "skills" / "example"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: example\ndescription: Example skill.\n---\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(sync, "ROOT", root):
+                self.assertEqual(sync.refresh_display_names(), ["example"])
+                self.assertEqual(sync.refresh_display_names(), [])
+
+    def test_every_packaged_skill_has_a_dcs_display_name(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        for skill in sorted((root / "skills").iterdir()):
+            with self.subTest(skill=skill.name):
+                manifest = skill / "agents" / "openai.yaml"
+                self.assertTrue(manifest.is_file())
+                payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+                self.assertTrue(payload["interface"]["display_name"].startswith("DCS: "))
+
     def test_grill_with_docs_is_explicit_only(self) -> None:
         root = Path(__file__).resolve().parents[1]
         manifest = root / "skills" / "grill-with-docs" / "agents" / "openai.yaml"
@@ -675,6 +754,7 @@ class LockTests(unittest.TestCase):
             packaged_skill = "---\nname: example\ndescription: Example skill.\n---\n"
             (source / "SKILL.md").write_text(source_skill, encoding="utf-8")
             (destination / "SKILL.md").write_text(packaged_skill, encoding="utf-8")
+            write_packaged_agent_manifest(destination)
             registry = root / "upstreams.json"
             registry.write_text(
                 '{"schemaVersion":1,"skills":[{"name":"example",'
@@ -733,6 +813,7 @@ class LockTests(unittest.TestCase):
             skill = "---\nname: example\ndescription: Example skill.\n---\n"
             (source / "SKILL.md").write_text(skill, encoding="utf-8")
             (destination / "SKILL.md").write_text(skill, encoding="utf-8")
+            write_packaged_agent_manifest(destination)
             registry = root / "upstreams.json"
             registry.write_text(
                 '{"schemaVersion":1,"skills":[{"name":"example",'

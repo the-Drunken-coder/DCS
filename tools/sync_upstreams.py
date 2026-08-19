@@ -45,6 +45,7 @@ EXTENSION_NAMESPACE = re.compile(
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
 MAX_SKILL_NAME_LENGTH = 64
+DCS_DISPLAY_PREFIX = "DCS: "
 PSTACK_ADAPTER = "pstack-single-skill"
 SUPPORTED_ADAPTERS = {"cursor-manual-only", PSTACK_ADAPTER}
 
@@ -252,7 +253,9 @@ def reject_symlinks(root: Path) -> None:
             raise SyncError(f"{root} contains a symlink: {path.relative_to(root)}")
 
 
-def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> None:
+def validate_skill(
+    directory: Path, expected_name: str, strict: bool = True
+) -> dict[str, object]:
     skill_file = directory / "SKILL.md"
     if not skill_file.is_file():
         raise SyncError(f"{directory} must contain SKILL.md")
@@ -284,12 +287,13 @@ def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> 
         raise SyncError(f"{skill_file} must have a description")
     if "<" in description or ">" in description or len(description) > 1024:
         raise SyncError(f"{skill_file} has an invalid description")
+    return fields
 
 
-def validate_agent_manifest(directory: Path) -> None:
+def validate_agent_manifest(directory: Path, *, require_dcs_prefix: bool = True) -> None:
     path = directory / "agents" / "openai.yaml"
     if not path.exists():
-        return
+        raise SyncError(f"{directory} must contain agents/openai.yaml")
     if not path.is_file():
         raise SyncError(f"{path} must be a file")
     try:
@@ -317,6 +321,10 @@ def validate_agent_manifest(directory: Path) -> None:
     for field in ("display_name", "short_description"):
         if not isinstance(interface.get(field), str) or not interface[field].strip():
             raise SyncError(f"{path} interface.{field} must be a non-empty string")
+    if require_dcs_prefix and not interface["display_name"].startswith(DCS_DISPLAY_PREFIX):
+        raise SyncError(
+            f"{path} interface.display_name must start with {DCS_DISPLAY_PREFIX!r}"
+        )
     default_prompt = interface.get("default_prompt")
     if default_prompt is not None and (
         not isinstance(default_prompt, str) or not default_prompt.strip()
@@ -357,6 +365,46 @@ def validate_agent_manifest(directory: Path) -> None:
             raise SyncError(f"{path} dependencies must be an object")
         if set(dependencies) - {"tools"}:
             raise SyncError(f"{path} contains unsupported dependency fields")
+
+
+def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
+    path = directory / "agents" / "openai.yaml"
+    if not path.exists():
+        fields = validate_skill(directory, skill_name)
+        description = fields["description"]
+        assert isinstance(description, str)
+        display_name = skill_name.replace("-", " ").title()
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "interface:\n"
+            f"  display_name: {json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)}\n"
+            f"  short_description: {json.dumps(description.strip(), ensure_ascii=False)}\n",
+            encoding="utf-8",
+        )
+        return
+
+    validate_agent_manifest(directory, require_dcs_prefix=False)
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    display_name = payload["interface"]["display_name"]
+    if display_name.startswith(DCS_DISPLAY_PREFIX):
+        return
+
+    contents = path.read_text(encoding="utf-8")
+    display_name_field = re.compile(
+        r"^([ \t]+display_name[ \t]*:[ \t]*)[^\r\n]*", re.MULTILINE
+    )
+    matches = list(display_name_field.finditer(contents))
+    if len(matches) != 1:
+        raise SyncError(f"{path} must contain one interface.display_name field")
+    contents = display_name_field.sub(
+        lambda match: (
+            match.group(1)
+            + json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)
+        ),
+        contents,
+        count=1,
+    )
+    path.write_text(contents, encoding="utf-8")
 
 
 def validate_pstack_source(directory: Path) -> None:
@@ -479,6 +527,7 @@ def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
             paths = ", ".join(path.as_posix() for path in collisions)
             raise SyncError(f"{upstream.source} port overlay collides with upstream files: {paths}")
         shutil.copytree(overlay, candidate, dirs_exist_ok=True)
+    apply_dcs_display_name(candidate, upstream.name)
     reject_symlinks(candidate)
     validate_skill(candidate, upstream.name)
     validate_agent_manifest(candidate)
@@ -645,6 +694,17 @@ def validate_plugin() -> None:
         validate_agent_manifest(directory)
 
 
+def refresh_display_names() -> list[str]:
+    changed: list[str] = []
+    for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
+        manifest = directory / "agents" / "openai.yaml"
+        before = manifest.read_bytes() if manifest.exists() else None
+        apply_dcs_display_name(directory, directory.name)
+        if manifest.read_bytes() != before:
+            changed.append(directory.name)
+    return changed
+
+
 def plugin_version(bump: bool = False) -> str:
     manifest = json.loads(PLUGIN_MANIFEST.read_text(encoding="utf-8"))
     version = manifest.get("version")
@@ -741,11 +801,12 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--sync", action="store_true")
     mode.add_argument("--validate", action="store_true")
+    mode.add_argument("--refresh-display-names", action="store_true")
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--bump-plugin-version", action="store_true")
     args = parser.parse_args()
-    if args.bump_plugin_version and not args.sync:
-        parser.error("--bump-plugin-version requires --sync")
+    if args.bump_plugin_version and not (args.sync or args.refresh_display_names):
+        parser.error("--bump-plugin-version requires --sync or --refresh-display-names")
     return args
 
 
@@ -756,6 +817,15 @@ def main() -> int:
         load_registry(registry)
         validate_plugin()
         print("DCS plugin and upstream registry are valid.")
+        return 0
+
+    if args.refresh_display_names:
+        changed = refresh_display_names()
+        version = plugin_version(bool(changed) and args.bump_plugin_version)
+        validate_plugin()
+        state = ", ".join(changed) if changed else "none"
+        print(f"Refreshed DCS display names: {state}.")
+        print(f"Plugin version: {version}")
         return 0
 
     results, changed = synchronize(registry, write=args.sync)
