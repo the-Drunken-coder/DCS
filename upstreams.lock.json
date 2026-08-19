@@ -9,7 +9,8 @@
     "pstack": "038335f7e6bf894d50d8cab3a09bf4067299711d",
     "thermo-nuclear-code-quality-review": "d9c8935dd560b3b6f5941247d04a1843f8c7cc35",
     "thermo-nuclear-review": "b222e50771b6bc6f7d2b926b86da2342f160bb79",
-    "thermos": "56e7ab69f83a54852b54512b536c95ea45ecf1e1"
+    "thermos": "56e7ab69f83a54852b54512b536c95ea45ecf1e1",
+    "unslop": "6161508c5c7959b156ff0e4e10b510863b51f9cc"
   },
   "managedSkills": [
     "anti-ui-slop",
@@ -22,6 +23,7 @@
     "pstack",
     "thermo-nuclear-code-quality-review",
     "thermo-nuclear-review",
-    "thermos"
+    "thermos",
+    "unslop"
   ]
 }
