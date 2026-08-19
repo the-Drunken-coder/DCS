@@ -46,12 +46,6 @@ Check for upstream changes without modifying the repository:
 python3 tools/sync_upstreams.py --check
 ```
 
-Refresh DCS display-name prefixes without importing upstream changes:
-
-```bash
-python3 tools/sync_upstreams.py --refresh-display-names
-```
-
 Synchronize registered skills locally:
 
 ```bash

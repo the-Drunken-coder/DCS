@@ -374,7 +374,7 @@ def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
         description = fields["description"]
         assert isinstance(description, str)
         display_name = skill_name.replace("-", " ").title()
-        path.parent.mkdir(parents=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             "interface:\n"
             f"  display_name: {json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)}\n"
@@ -694,17 +694,6 @@ def validate_plugin() -> None:
         validate_agent_manifest(directory)
 
 
-def refresh_display_names() -> list[str]:
-    changed: list[str] = []
-    for directory in sorted(path for path in (ROOT / "skills").iterdir() if path.is_dir()):
-        manifest = directory / "agents" / "openai.yaml"
-        before = manifest.read_bytes() if manifest.exists() else None
-        apply_dcs_display_name(directory, directory.name)
-        if manifest.read_bytes() != before:
-            changed.append(directory.name)
-    return changed
-
-
 def plugin_version(bump: bool = False) -> str:
     manifest = json.loads(PLUGIN_MANIFEST.read_text(encoding="utf-8"))
     version = manifest.get("version")
@@ -801,12 +790,11 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--sync", action="store_true")
     mode.add_argument("--validate", action="store_true")
-    mode.add_argument("--refresh-display-names", action="store_true")
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     parser.add_argument("--bump-plugin-version", action="store_true")
     args = parser.parse_args()
-    if args.bump_plugin_version and not (args.sync or args.refresh_display_names):
-        parser.error("--bump-plugin-version requires --sync or --refresh-display-names")
+    if args.bump_plugin_version and not args.sync:
+        parser.error("--bump-plugin-version requires --sync")
     return args
 
 
@@ -817,15 +805,6 @@ def main() -> int:
         load_registry(registry)
         validate_plugin()
         print("DCS plugin and upstream registry are valid.")
-        return 0
-
-    if args.refresh_display_names:
-        changed = refresh_display_names()
-        version = plugin_version(bool(changed) and args.bump_plugin_version)
-        validate_plugin()
-        state = ", ".join(changed) if changed else "none"
-        print(f"Refreshed DCS display names: {state}.")
-        print(f"Plugin version: {version}")
         return 0
 
     results, changed = synchronize(registry, write=args.sync)

@@ -140,6 +140,9 @@ class PortAdapterTests(unittest.TestCase):
 
     def test_exact_mirror_gets_dcs_metadata_when_upstream_has_none(self) -> None:
         source = self.write_source(marker=False)
+        agents = source / "agents"
+        agents.mkdir()
+        (agents / "notes.txt").write_text("Preserve me.\n", encoding="utf-8")
         upstream = sync.Upstream(
             name="example",
             repository="owner/repository",
@@ -163,6 +166,10 @@ class PortAdapterTests(unittest.TestCase):
                 "display_name": "DCS: Example",
                 "short_description": "Example skill.",
             },
+        )
+        self.assertEqual(
+            (candidate / "agents" / "notes.txt").read_text(encoding="utf-8"),
+            "Preserve me.\n",
         )
 
     def test_adapter_fails_when_cursor_metadata_changes(self) -> None:
@@ -663,20 +670,6 @@ class CheckoutTests(unittest.TestCase):
 
 
 class PortPolicyTests(unittest.TestCase):
-    def test_display_name_refresh_is_idempotent(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            skill = root / "skills" / "example"
-            skill.mkdir(parents=True)
-            (skill / "SKILL.md").write_text(
-                "---\nname: example\ndescription: Example skill.\n---\n",
-                encoding="utf-8",
-            )
-
-            with mock.patch.object(sync, "ROOT", root):
-                self.assertEqual(sync.refresh_display_names(), ["example"])
-                self.assertEqual(sync.refresh_display_names(), [])
-
     def test_every_packaged_skill_has_a_dcs_display_name(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for skill in sorted((root / "skills").iterdir()):
