@@ -95,6 +95,14 @@
       "adapter": "cursor-manual-only",
       "overlay": "ports/thermos",
       "patch": "ports/thermos.patch"
+    },
+    {
+      "name": "unslop",
+      "repository": "cursor/plugins",
+      "ref": "main",
+      "path": "pstack/skills/unslop",
+      "destination": "skills/unslop",
+      "overlay": "ports/unslop"
     }
   ]
 }

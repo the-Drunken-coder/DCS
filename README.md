@@ -24,6 +24,7 @@ It also tracks selected public skills:
 - `thermo-nuclear-review` performs a strict correctness and security branch audit.
 - `thermo-nuclear-code-quality-review` performs a strict maintainability and structure audit.
 - `thermos` runs both Thermo-Nuclear reviews concurrently and synthesizes the results.
+- `unslop` mirrors P-Stack's writing cleanup skill, removing common AI tells while preserving meaning and intended tone.
 
 Future skills belong in `skills/` and should be added only when they earn their place.
 
