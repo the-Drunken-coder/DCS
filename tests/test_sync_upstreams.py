@@ -350,6 +350,38 @@ class PortAdapterTests(unittest.TestCase):
             manifest.replace(b'"Example"', b'"DCS: Example"', 1),
         )
 
+    def test_exact_mirror_preserves_anchored_display_name(self) -> None:
+        source = self.write_source(marker=False)
+        agents = source / "agents"
+        agents.mkdir()
+        (agents / "openai.yaml").write_text(
+            "interface:\n"
+            '  display_name: &label "Example"\n'
+            '  short_description: "Example skill description"\n'
+            "  default_prompt: *label\n",
+            encoding="utf-8",
+        )
+        upstream = sync.Upstream(
+            name="example",
+            repository="owner/repository",
+            ref="main",
+            path=PurePosixPath("skills/example"),
+            destination=PurePosixPath("skills/example"),
+            adapter=None,
+            overlay=None,
+            patch=None,
+        )
+        candidate = self.root / "candidate"
+
+        sync.adapt_candidate(upstream, source, candidate)
+
+        manifest_path = candidate / "agents" / "openai.yaml"
+        contents = manifest_path.read_text(encoding="utf-8")
+        manifest = yaml.safe_load(contents)
+        self.assertIn('&label "DCS: Example"', contents)
+        self.assertEqual(manifest["interface"]["display_name"], "DCS: Example")
+        self.assertEqual(manifest["interface"]["default_prompt"], "DCS: Example")
+
     def test_exact_mirror_updates_block_scalar_agent_manifest(self) -> None:
         source = self.write_source(marker=False)
         agents = source / "agents"

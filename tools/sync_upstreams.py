@@ -18,6 +18,7 @@ import tempfile
 
 import yaml
 from yaml.nodes import MappingNode, ScalarNode
+from yaml.tokens import ScalarToken
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -415,16 +416,27 @@ def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
         raise SyncError(f"{path} must contain one interface.display_name field")
 
     node = display_name_nodes[0]
-    original = contents[node.start_mark.index : node.end_mark.index]
+    scalar_tokens = [
+        token
+        for token in yaml.scan(contents)
+        if isinstance(token, ScalarToken)
+        and node.start_mark.index <= token.start_mark.index
+        and token.end_mark.index <= node.end_mark.index
+        and token.value == display_name
+    ]
+    if len(scalar_tokens) != 1:
+        raise SyncError(f"{path} must contain one interface.display_name scalar")
+    token = scalar_tokens[0]
+    original = contents[token.start_mark.index : token.end_mark.index]
     replacement = json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)
     if original.endswith("\r\n"):
         replacement += "\r\n"
     elif original.endswith("\n"):
         replacement += "\n"
     contents = (
-        contents[: node.start_mark.index]
+        contents[: token.start_mark.index]
         + replacement
-        + contents[node.end_mark.index :]
+        + contents[token.end_mark.index :]
     )
     path.write_bytes(contents.encode("utf-8"))
 
