@@ -1,5 +1,5 @@
 interface:
-  display_name: "Thermo-Nuclear Review"
+  display_name: "DCS: Thermo-Nuclear Review"
   short_description: "Deep correctness and security branch audit"
   default_prompt: "Use $thermo-nuclear-review to audit this branch for correctness, security, and breaking changes."
 policy:

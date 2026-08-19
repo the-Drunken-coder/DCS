@@ -17,6 +17,8 @@ import sys
 import tempfile
 
 import yaml
+from yaml.nodes import MappingNode, ScalarNode
+from yaml.tokens import ScalarToken
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +47,7 @@ EXTENSION_NAMESPACE = re.compile(
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
 MAX_SKILL_NAME_LENGTH = 64
+DCS_DISPLAY_PREFIX = "DCS: "
 PSTACK_ADAPTER = "pstack-single-skill"
 SUPPORTED_ADAPTERS = {"cursor-manual-only", PSTACK_ADAPTER}
 
@@ -252,7 +255,9 @@ def reject_symlinks(root: Path) -> None:
             raise SyncError(f"{root} contains a symlink: {path.relative_to(root)}")
 
 
-def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> None:
+def validate_skill(
+    directory: Path, expected_name: str, strict: bool = True
+) -> dict[str, object]:
     skill_file = directory / "SKILL.md"
     if not skill_file.is_file():
         raise SyncError(f"{directory} must contain SKILL.md")
@@ -284,12 +289,13 @@ def validate_skill(directory: Path, expected_name: str, strict: bool = True) -> 
         raise SyncError(f"{skill_file} must have a description")
     if "<" in description or ">" in description or len(description) > 1024:
         raise SyncError(f"{skill_file} has an invalid description")
+    return fields
 
 
-def validate_agent_manifest(directory: Path) -> None:
+def validate_agent_manifest(directory: Path, *, require_dcs_prefix: bool = True) -> None:
     path = directory / "agents" / "openai.yaml"
     if not path.exists():
-        return
+        raise SyncError(f"{directory} must contain agents/openai.yaml")
     if not path.is_file():
         raise SyncError(f"{path} must be a file")
     try:
@@ -317,6 +323,15 @@ def validate_agent_manifest(directory: Path) -> None:
     for field in ("display_name", "short_description"):
         if not isinstance(interface.get(field), str) or not interface[field].strip():
             raise SyncError(f"{path} interface.{field} must be a non-empty string")
+    display_name = interface["display_name"]
+    if require_dcs_prefix and (
+        not display_name.startswith(DCS_DISPLAY_PREFIX)
+        or not display_name[len(DCS_DISPLAY_PREFIX) :].strip()
+    ):
+        raise SyncError(
+            f"{path} interface.display_name must start with {DCS_DISPLAY_PREFIX!r} "
+            "and include a display name"
+        )
     default_prompt = interface.get("default_prompt")
     if default_prompt is not None and (
         not isinstance(default_prompt, str) or not default_prompt.strip()
@@ -357,6 +372,73 @@ def validate_agent_manifest(directory: Path) -> None:
             raise SyncError(f"{path} dependencies must be an object")
         if set(dependencies) - {"tools"}:
             raise SyncError(f"{path} contains unsupported dependency fields")
+
+
+def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
+    path = directory / "agents" / "openai.yaml"
+    if not path.exists():
+        fields = validate_skill(directory, skill_name)
+        description = fields["description"]
+        assert isinstance(description, str)
+        display_name = skill_name.replace("-", " ").title()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "interface:\n"
+            f"  display_name: {json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)}\n"
+            f"  short_description: {json.dumps(description.strip(), ensure_ascii=False)}\n",
+            encoding="utf-8",
+        )
+        return
+
+    validate_agent_manifest(directory, require_dcs_prefix=False)
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    display_name = payload["interface"]["display_name"]
+    if display_name.startswith(DCS_DISPLAY_PREFIX):
+        return
+
+    contents = path.read_bytes().decode("utf-8")
+    document = yaml.compose(contents)
+    if not isinstance(document, MappingNode):
+        raise SyncError(f"{path} must contain an object")
+    interface_nodes = [
+        value
+        for key, value in document.value
+        if isinstance(key, ScalarNode) and key.value == "interface"
+    ]
+    if len(interface_nodes) != 1 or not isinstance(interface_nodes[0], MappingNode):
+        raise SyncError(f"{path} must contain one interface object")
+    display_name_nodes = [
+        value
+        for key, value in interface_nodes[0].value
+        if isinstance(key, ScalarNode) and key.value == "display_name"
+    ]
+    if len(display_name_nodes) != 1 or not isinstance(display_name_nodes[0], ScalarNode):
+        raise SyncError(f"{path} must contain one interface.display_name field")
+
+    node = display_name_nodes[0]
+    scalar_tokens = [
+        token
+        for token in yaml.scan(contents)
+        if isinstance(token, ScalarToken)
+        and node.start_mark.index <= token.start_mark.index
+        and token.end_mark.index <= node.end_mark.index
+        and token.value == display_name
+    ]
+    if len(scalar_tokens) != 1:
+        raise SyncError(f"{path} must contain one interface.display_name scalar")
+    token = scalar_tokens[0]
+    original = contents[token.start_mark.index : token.end_mark.index]
+    replacement = json.dumps(DCS_DISPLAY_PREFIX + display_name, ensure_ascii=False)
+    if original.endswith("\r\n"):
+        replacement += "\r\n"
+    elif original.endswith("\n"):
+        replacement += "\n"
+    contents = (
+        contents[: token.start_mark.index]
+        + replacement
+        + contents[token.end_mark.index :]
+    )
+    path.write_bytes(contents.encode("utf-8"))
 
 
 def validate_pstack_source(directory: Path) -> None:
@@ -479,6 +561,7 @@ def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
             paths = ", ".join(path.as_posix() for path in collisions)
             raise SyncError(f"{upstream.source} port overlay collides with upstream files: {paths}")
         shutil.copytree(overlay, candidate, dirs_exist_ok=True)
+    apply_dcs_display_name(candidate, upstream.name)
     reject_symlinks(candidate)
     validate_skill(candidate, upstream.name)
     validate_agent_manifest(candidate)

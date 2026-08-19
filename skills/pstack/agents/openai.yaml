@@ -1,5 +1,5 @@
 interface:
-  display_name: "Pstack"
+  display_name: "DCS: Pstack"
   short_description: "Rigorous evidence-first engineering workflows"
   default_prompt: "Use $pstack to solve this engineering task with the smallest evidence-backed change."
 policy:
