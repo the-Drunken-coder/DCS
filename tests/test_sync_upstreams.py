@@ -321,6 +321,35 @@ class PortAdapterTests(unittest.TestCase):
         )
         self.assertEqual(manifest["interface"]["display_name"], "DCS: Example")
 
+    def test_exact_mirror_preserves_crlf_agent_manifest(self) -> None:
+        source = self.write_source(marker=False)
+        agents = source / "agents"
+        agents.mkdir()
+        manifest = (
+            b"interface:\r\n"
+            b'  display_name: "Example"\r\n'
+            b'  short_description: "Example skill description"\r\n'
+        )
+        (agents / "openai.yaml").write_bytes(manifest)
+        upstream = sync.Upstream(
+            name="example",
+            repository="owner/repository",
+            ref="main",
+            path=PurePosixPath("skills/example"),
+            destination=PurePosixPath("skills/example"),
+            adapter=None,
+            overlay=None,
+            patch=None,
+        )
+        candidate = self.root / "candidate"
+
+        sync.adapt_candidate(upstream, source, candidate)
+
+        self.assertEqual(
+            (candidate / "agents" / "openai.yaml").read_bytes(),
+            manifest.replace(b'"Example"', b'"DCS: Example"', 1),
+        )
+
     def test_exact_mirror_updates_block_scalar_agent_manifest(self) -> None:
         source = self.write_source(marker=False)
         agents = source / "agents"
@@ -754,7 +783,9 @@ class PortPolicyTests(unittest.TestCase):
                 manifest = skill / "agents" / "openai.yaml"
                 self.assertTrue(manifest.is_file())
                 payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-                self.assertTrue(payload["interface"]["display_name"].startswith("DCS: "))
+                display_name = payload["interface"]["display_name"]
+                self.assertTrue(display_name.startswith(sync.DCS_DISPLAY_PREFIX))
+                self.assertTrue(display_name[len(sync.DCS_DISPLAY_PREFIX) :].strip())
 
     def test_grill_with_docs_is_explicit_only(self) -> None:
         root = Path(__file__).resolve().parents[1]

@@ -395,7 +395,7 @@ def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
     if display_name.startswith(DCS_DISPLAY_PREFIX):
         return
 
-    contents = path.read_text(encoding="utf-8")
+    contents = path.read_bytes().decode("utf-8")
     document = yaml.compose(contents)
     if not isinstance(document, MappingNode):
         raise SyncError(f"{path} must contain an object")
@@ -426,7 +426,7 @@ def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
         + replacement
         + contents[node.end_mark.index :]
     )
-    path.write_text(contents, encoding="utf-8")
+    path.write_bytes(contents.encode("utf-8"))
 
 
 def validate_pstack_source(directory: Path) -> None:
