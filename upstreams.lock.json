@@ -14,6 +14,7 @@
   },
   "managedSkills": [
     "anti-ui-slop",
+    "architecture-map",
     "codebase-design",
     "deslop",
     "domain-modeling",
