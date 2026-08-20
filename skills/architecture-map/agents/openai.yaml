@@ -1,0 +1,3 @@
+interface:
+  display_name: "DCS: Architecture Map"
+  short_description: "Build or update an interactive isometric map of a repository's architecture — buildings sized by real measurements, neighborhoods by subsystem, animated flows tracing actual call paths, and a drift counter that fails CI when the map falls behind the code. Use when someone wants to see, explain, or onboard people to how a codebase fits together, or asks for an architecture diagram, system map, codebase overview, or \"show me how this repo works\". Adapts to the repo's design system; re-run to refresh."

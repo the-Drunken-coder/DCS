@@ -16,6 +16,7 @@ The package contains three maintainer-owned skills:
 It also tracks selected public skills:
 
 - `anti-ui-slop` helps agents build product-specific interfaces and check them for generic UI defaults.
+- `architecture-map` builds an interactive isometric map from measured repository structure and authored call paths.
 - `codebase-design` provides the shared vocabulary and principles for deep-module design.
 - `deslop` removes AI-generated code slop. DCS tracks the skill from Cursor's public `cursor/plugins` repository.
 - `grill-with-docs` stress-tests a plan or design while sharpening its domain language and recording durable decisions. DCS also packages the `grilling` and `domain-modeling` skills it composes.

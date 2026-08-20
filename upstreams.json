@@ -9,6 +9,13 @@
       "destination": "skills/anti-ui-slop"
     },
     {
+      "name": "architecture-map",
+      "repository": "almendili/skills",
+      "ref": "main",
+      "path": "architecture-map",
+      "destination": "skills/architecture-map"
+    },
+    {
       "name": "codebase-design",
       "repository": "mattpocock/skills",
       "ref": "main",
