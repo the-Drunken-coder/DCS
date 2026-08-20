@@ -122,6 +122,38 @@ class PortAdapterTests(unittest.TestCase):
         for name in ("principles.md", "processes.md"):
             (references / name).write_text(f"# {name}\n", encoding="utf-8")
 
+    def anti_ui_slop_upstream(self) -> sync.Upstream:
+        return sync.Upstream(
+            name="anti-ui-slop",
+            repository="uizze/uizze",
+            ref="main",
+            path=PurePosixPath("skills/anti-ui-slop"),
+            destination=PurePosixPath("skills/anti-ui-slop"),
+            adapter=sync.ANTI_UI_SLOP_ADAPTER,
+            overlay=PurePosixPath("ports/anti-ui-slop"),
+            patch=None,
+        )
+
+    def write_anti_ui_slop_source(self) -> Path:
+        source = self.root / "anti-ui-slop-source"
+        source.mkdir()
+        (source / "SKILL.md").write_text(
+            "---\nname: anti-ui-slop\ndescription: Upstream skill.\n---\n\n"
+            "Run scripts/context.mjs, then read reference/new-work.md and "
+            "reference/craft-floor.md.\n",
+            encoding="utf-8",
+        )
+        return source
+
+    def write_anti_ui_slop_port(self) -> None:
+        port = self.root / "ports" / "anti-ui-slop"
+        port.mkdir(parents=True)
+        (port / "SKILL.md").write_text(
+            "---\nname: anti-ui-slop\ndescription: Standalone port.\n---\n",
+            encoding="utf-8",
+        )
+        write_packaged_agent_manifest(port)
+
     def test_adapter_removes_cursor_metadata_and_applies_port(self) -> None:
         source = self.write_source()
         self.write_port()
@@ -241,6 +273,29 @@ class PortAdapterTests(unittest.TestCase):
         (source / "skills" / "poteto-mode" / "SKILL.md").write_bytes(b"\xff")
         with self.assertRaisesRegex(sync.SyncError, "cannot read pstack poteto-mode"):
             sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
+
+    def test_anti_ui_slop_adapter_packages_only_the_standalone_port(self) -> None:
+        source = self.write_anti_ui_slop_source()
+        self.write_anti_ui_slop_port()
+        candidate = self.root / "candidate"
+
+        sync.adapt_candidate(self.anti_ui_slop_upstream(), source, candidate)
+
+        self.assertEqual(
+            (candidate / "SKILL.md").read_bytes(),
+            (self.root / "ports" / "anti-ui-slop" / "SKILL.md").read_bytes(),
+        )
+        self.assertFalse((candidate / "scripts").exists())
+
+    def test_anti_ui_slop_adapter_stops_when_upstream_adds_runtime_scripts(self) -> None:
+        source = self.write_anti_ui_slop_source()
+        self.write_anti_ui_slop_port()
+        (source / "scripts").mkdir()
+
+        with self.assertRaisesRegex(sync.SyncError, "now packages runtime scripts"):
+            sync.adapt_candidate(
+                self.anti_ui_slop_upstream(), source, self.root / "candidate"
+            )
 
     def test_exact_mirror_rejects_invalid_agent_manifest_before_install(self) -> None:
         source = self.write_source(marker=False)
@@ -446,6 +501,20 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "pstack adapter must use"):
                 sync.load_registry(registry)
 
+    def test_anti_ui_slop_adapter_requires_the_narrow_port_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            registry = Path(temporary_directory) / "upstreams.json"
+            registry.write_text(
+                '{"schemaVersion":1,"skills":[{"name":"anti-ui-slop",'
+                '"repository":"uizze/uizze","ref":"main",'
+                '"path":"skills/anti-ui-slop","destination":"skills/anti-ui-slop",'
+                '"adapter":"anti-ui-slop-standalone","overlay":"ports/lookalike"}]}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(sync.SyncError, "anti-ui-slop adapter must use"):
+                sync.load_registry(registry)
+
     def test_pstack_adapter_requires_the_registered_upstream(self) -> None:
         invalid_upstreams = (("lookalike/plugins", "main"), ("cursor/plugins", "release"))
         for repository, ref in invalid_upstreams:
@@ -620,6 +689,7 @@ class SkillValidationTests(unittest.TestCase):
                 "name: example\n"
                 "description: Example skill.\n"
                 "license: MIT\n"
+                "compatibility: Requires network access.\n"
                 "allowed-tools: Read Bash\n"
                 "metadata:\n"
                 '  version: "1.0"\n'

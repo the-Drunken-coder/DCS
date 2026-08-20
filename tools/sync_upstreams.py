@@ -45,11 +45,19 @@ EXTENSION_NAMESPACE = re.compile(
     r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$"
 )
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
-SKILL_FIELDS = {"name", "description", "license", "allowed-tools", "metadata"}
+SKILL_FIELDS = {
+    "name",
+    "description",
+    "license",
+    "compatibility",
+    "allowed-tools",
+    "metadata",
+}
 MAX_SKILL_NAME_LENGTH = 64
 DCS_DISPLAY_PREFIX = "DCS: "
+ANTI_UI_SLOP_ADAPTER = "anti-ui-slop-standalone"
 PSTACK_ADAPTER = "pstack-single-skill"
-SUPPORTED_ADAPTERS = {"cursor-manual-only", PSTACK_ADAPTER}
+SUPPORTED_ADAPTERS = {"cursor-manual-only", ANTI_UI_SLOP_ADAPTER, PSTACK_ADAPTER}
 
 
 class SyncError(RuntimeError):
@@ -146,6 +154,19 @@ def load_registry(path: Path) -> list[Upstream]:
             raise SyncError(f"{label}.patch must be a .patch file under ports/")
         if destination != PurePosixPath("skills") / name:
             raise SyncError(f"{label}.destination must be skills/{name}")
+        if adapter == ANTI_UI_SLOP_ADAPTER and (
+            name != "anti-ui-slop"
+            or repository != "uizze/uizze"
+            or ref != "main"
+            or source_path != PurePosixPath("skills/anti-ui-slop")
+            or overlay != PurePosixPath("ports/anti-ui-slop")
+            or patch is not None
+        ):
+            raise SyncError(
+                f"{label} anti-ui-slop adapter must use "
+                "uizze/uizze@main:skills/anti-ui-slop -> "
+                "skills/anti-ui-slop with ports/anti-ui-slop"
+            )
         if adapter == PSTACK_ADAPTER and (
             name != "pstack"
             or repository != "cursor/plugins"
@@ -464,6 +485,21 @@ def validate_pstack_source(directory: Path) -> None:
         raise SyncError("pstack poteto-mode entry point changed; review the single-skill port")
 
 
+def validate_anti_ui_slop_source(directory: Path) -> None:
+    skill_file = directory / "SKILL.md"
+    try:
+        contents = skill_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise SyncError(f"cannot read anti-ui-slop entry point: {error}") from error
+    if not all(
+        marker in contents
+        for marker in ("scripts/context.mjs", "reference/new-work.md", "reference/craft-floor.md")
+    ):
+        raise SyncError("anti-ui-slop entry point changed; review the standalone port")
+    if (directory / "scripts").exists():
+        raise SyncError("anti-ui-slop now packages runtime scripts; review the standalone port")
+
+
 def checkout(
     upstream: Upstream,
     parent: Path,
@@ -503,6 +539,8 @@ def checkout(
         validate_pstack_source(source)
     else:
         validate_skill(source, upstream.name, strict=False)
+        if upstream.adapter == ANTI_UI_SLOP_ADAPTER:
+            validate_anti_ui_slop_source(source)
     tree = git("rev-parse", f"HEAD:{upstream.path}", cwd=checkout_root)
     return source, commit, tree
 
@@ -523,6 +561,9 @@ def apply_port_patch(candidate: Path, patch: Path) -> None:
 def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
     if upstream.adapter == PSTACK_ADAPTER:
         validate_pstack_source(source)
+        candidate.mkdir()
+    elif upstream.adapter == ANTI_UI_SLOP_ADAPTER:
+        validate_anti_ui_slop_source(source)
         candidate.mkdir()
     else:
         shutil.copytree(source, candidate)

@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
   "skills": {
-    "codebase-design": "20b7cd1dd1fe5b0bd37ba72649f3a29375574b5b",
-    "domain-modeling": "05c3244ec75b7548bbc2b635b0624bb9f70369c3",
+    "anti-ui-slop": "409b639b322508aab7063441880ae0e6e751bac1",
+    "codebase-design": "344e3efc88ee60663b2e989555c2efdb548fbd42",
+    "domain-modeling": "388c9822641805ca2dcd5038e68a1d5282437ee5",
     "grill-with-docs": "eedaf2562c83155115e9c649fa3ecaac2e10e81d",
-    "grilling": "0d40d978f1a588971a11ea7ae85b208e78102dc3",
-    "improve-codebase-architecture": "db546af0f3419a8bd261a83708d4cb33d2a915cd",
-    "pstack": "038335f7e6bf894d50d8cab3a09bf4067299711d",
+    "grilling": "f0732035b8b1b60ae39454e4191caef32fa91903",
+    "improve-codebase-architecture": "3d35cd438f4067b03c8b3792e038960e4ac11526",
+    "pstack": "ccb96ee4d36d35ff9986c557bb612e21b2154f4f",
     "thermo-nuclear-code-quality-review": "d9c8935dd560b3b6f5941247d04a1843f8c7cc35",
     "thermo-nuclear-review": "b222e50771b6bc6f7d2b926b86da2342f160bb79",
     "thermos": "56e7ab69f83a54852b54512b536c95ea45ecf1e1",

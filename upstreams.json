@@ -6,7 +6,9 @@
       "repository": "uizze/uizze",
       "ref": "main",
       "path": "skills/anti-ui-slop",
-      "destination": "skills/anti-ui-slop"
+      "destination": "skills/anti-ui-slop",
+      "adapter": "anti-ui-slop-standalone",
+      "overlay": "ports/anti-ui-slop"
     },
     {
       "name": "architecture-map",
