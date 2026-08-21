@@ -1,0 +1,4 @@
+interface:
+  display_name: "DCS: Wait"
+  short_description: "Pause for work that may need more time"
+  default_prompt: "Use $wait to pause until this work is ready, then continue."

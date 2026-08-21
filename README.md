@@ -7,11 +7,12 @@ package. Its root [`plugin.json`](plugin.json) declares the portable format, and
 skills from `skills/` by convention. There is intentionally no legacy client-specific plugin
 manifest.
 
-The package contains three maintainer-owned skills:
+The package contains four maintainer-owned skills:
 
 - `file-pr` opens a focused pull request for the current branch.
 - `babysit-pr` monitors an existing pull request through reviews and CI.
 - `ask-opus` gets a second opinion from Opus through `claude -p`.
+- `wait` pauses for work that may need more time and checks again when useful.
 
 It also tracks selected public skills:
 
@@ -113,6 +114,38 @@ python3 -m unittest discover -s tests -v
 python3 tools/sync_upstreams.py --validate
 python3 tools/sync_upstreams.py --check
 ```
+
+Run the wait skill against an actual OpenCode agent without naming the skill in
+the prompt:
+
+```bash
+python3 tools/run_wait_skill_trial.py foreground-explicit --duration 20
+python3 tools/run_wait_skill_trial.py detached-implicit --duration 20
+python3 tools/run_wait_skill_trial.py opaque-underestimate --duration 20
+python3 tools/run_wait_skill_trial.py opaque-implicit --duration 20
+python3 tools/run_wait_skill_trial.py opaque-buried --duration 20
+python3 tools/run_wait_skill_trial.py resumable-terminal --duration 20
+```
+
+Run three reliability trials sequentially across the cheap Go model set:
+
+```bash
+python3 tools/run_wait_skill_matrix.py --repeat 3 --duration 12
+```
+
+Compare isolated discovery descriptions and names without changing the packaged
+skill:
+
+```bash
+python3 tools/run_wait_skill_variants.py --repeat 2 --duration 12
+```
+
+The variant runner also accepts the `static-timeout`, `completed-build-log`, and
+`async-code-review` near-miss scenarios for checking unwanted activation.
+
+Pass `--model opencode-go/deepseek-v4-flash` to use the Go subscription model
+after enabling its China-hosted models. The default uses OpenCode's free
+DeepSeek V4 Flash endpoint.
 
 The repository validator also enforces DCS release policy: a plain Semantic Versioning release,
 a non-empty description, and a named author. Those requirements are intentionally stricter than
