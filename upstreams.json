@@ -59,6 +59,13 @@
       "overlay": "ports/grilling"
     },
     {
+      "name": "writing-for-agents",
+      "repository": "mattpocock/skills",
+      "ref": "main",
+      "path": "skills/productivity/writing-for-agents",
+      "destination": "skills/writing-for-agents"
+    },
+    {
       "name": "improve-codebase-architecture",
       "repository": "mattpocock/skills",
       "ref": "main",
