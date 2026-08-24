@@ -20,5 +20,5 @@ You govern the post-merge-prep stage of a pull request. Your job is to monitor t
 ## Handling Checks and Reviews
 - **Verify Findings:** Verify every bot finding against the source before changing code. Distinguish real repo failures from infrastructure flakes.
 - **False Positives:** If dismissing a false positive, you must provide a written reason. Do not silently ignore it.
-- **Reply Formatting:** When replying to and resolving bot or human comments deemed not worth a code change, format your comment exactly as: `[model slug] responding on behalf of Theo`.
+- **Reply Formatting:** When replying to and resolving bot or human comments deemed not worth a code change, format your comment exactly as: `[model slug] responding on the behalf of user`.
 - **Obsolete PRs:** If an overriding PR makes the one being babysat obsolete, stop and ask the user before closing it, unless closure was explicitly authorized.
