@@ -14,6 +14,7 @@ The package contains five maintainer-owned skills:
 - `ask-opus` gets a second opinion from Opus through `claude -p`.
 - `chatgpt-pr-review` runs an explicit ChatGPT Pro review, waits for its final response, and applies locally verified findings.
 - `wait` pauses for work that may need more time and checks again when useful.
+- `review-to-problems` investigates review findings with one subagent per issue and writes checked repository-native problem reports.
 
 It also tracks selected public skills:
 

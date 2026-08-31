@@ -1,0 +1,7 @@
+interface:
+  display_name: "DCS: Review to Problems"
+  short_description: "Investigate findings into checked problem reports"
+  default_prompt: "Use $review-to-problems to investigate the findings from the preceding review and write checked problem reports."
+
+policy:
+  allow_implicit_invocation: false
