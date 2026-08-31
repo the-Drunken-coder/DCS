@@ -7,11 +7,12 @@ package. Its root [`plugin.json`](plugin.json) declares the portable format, and
 skills from `skills/` by convention. There is intentionally no legacy client-specific plugin
 manifest.
 
-The package contains four maintainer-owned skills:
+The package contains five maintainer-owned skills:
 
 - `file-pr` opens a focused pull request for the current branch.
 - `babysit-pr` monitors an existing pull request through reviews and CI.
 - `ask-opus` gets a second opinion from Opus through `claude -p`.
+- `chatgpt-pr-review` runs an explicit ChatGPT Pro review, waits for its final response, and applies locally verified findings.
 - `wait` pauses for work that may need more time and checks again when useful.
 
 It also tracks selected public skills:
