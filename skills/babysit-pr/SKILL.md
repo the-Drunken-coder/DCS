@@ -13,7 +13,7 @@ You govern the post-merge-prep stage of a pull request. Your job is to monitor t
 - Loop until all required CI checks pass and all actionable review feedback on the latest commit is resolved.
 
 ## Optional Review Tools
-- Use CodeRabbit, Greptile, Codex, and Macroscope when they are already available to the repository. To request a latest-commit review, comment `@coderabbitai review`, `@greptile-apps review`, `@codex review`, or `@macroscope-app review`, respectively.
+- Use CodeRabbit, Codex, and Macroscope when they are already available to the repository. To request a latest-commit review, comment `@coderabbitai review`, `@codex review`, or `@macroscope-app review`, respectively.
 - Treat these tools as optional enhancements, not readiness gates. Do not install or configure them unless the user asks.
 - If a tool is unavailable, unauthorized, unresponsive, or reports a rate, usage, or quota limit, record the reason and continue. Do not block completion or keep polling solely for an optional review tool.
 
