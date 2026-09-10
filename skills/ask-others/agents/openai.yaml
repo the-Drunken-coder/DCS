@@ -1,0 +1,4 @@
+interface:
+  display_name: "DCS: Ask Others"
+  short_description: "Collect full external reviews through one sub-agent"
+  default_prompt: "Use $ask-others to collect independent Opus, Flash, and Grok reviews of this and return every full review unchanged."

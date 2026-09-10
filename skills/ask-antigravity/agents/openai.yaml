@@ -1,0 +1,4 @@
+interface:
+  display_name: "DCS: Ask Antigravity"
+  short_description: "Flash 3.8 High reviews through Antigravity CLI"
+  default_prompt: "Use $ask-antigravity to get a Gemini 3.8 Flash High review of this."

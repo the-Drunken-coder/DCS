@@ -1,0 +1,4 @@
+interface:
+  display_name: "DCS: Ask Grok"
+  short_description: "Grok 4.6 xhigh reviews through Grok CLI"
+  default_prompt: "Use $ask-grok to get a Grok 4.6 review at its highest supported reasoning level."

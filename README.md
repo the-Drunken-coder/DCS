@@ -7,11 +7,14 @@ package. Its root [`plugin.json`](plugin.json) declares the portable format, and
 skills from `skills/` by convention. There is intentionally no legacy client-specific plugin
 manifest.
 
-The package contains six maintainer-owned skills:
+The package contains nine maintainer-owned skills:
 
 - `file-pr` opens a focused pull request for the current branch.
 - `babysit-pr` monitors an existing pull request through reviews and CI.
 - `ask-opus` gets a second opinion from Opus through `claude -p`.
+- `ask-antigravity` gets a Gemini 3.8 Flash High review through Antigravity CLI.
+- `ask-grok` gets a Grok 4.6 xhigh review through Grok CLI, with a 30-minute default deadline.
+- `ask-others` delegates to one GPT-5.6 Luna low coordinator, which invokes those three skills and returns their full reviews unchanged.
 - `chatgpt-pr-review` runs an explicit ChatGPT Pro review, waits for its final response, and applies locally verified findings.
 - `wait` pauses for work that may need more time and checks again when useful.
 - `review-to-problems` investigates review findings with one subagent per issue and writes checked repository-native problem reports.
@@ -29,6 +32,8 @@ It also tracks selected public skills:
 - `thermo-nuclear-code-quality-review` performs a strict maintainability and structure audit.
 - `thermos` runs both Thermo-Nuclear reviews concurrently and synthesizes the results.
 - `unslop` mirrors P-Stack's writing cleanup skill, removing common AI tells while preserving meaning and intended tone.
+
+The CLI review skills require the corresponding `claude`, `agy`, or `grok` CLI installed and signed in. Antigravity and Grok use their own Python runners; Ask Others only delegates to the individual skills. Review inputs stay in a fixed snapshot, and raw responses remain available alongside the unchanged full reviews.
 
 Future skills belong in `skills/` and should be added only when they earn their place.
 
