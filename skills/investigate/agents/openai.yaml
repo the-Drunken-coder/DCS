@@ -1,0 +1,3 @@
+interface:
+  display_name: "DCS: Investigate"
+  short_description: "Decide which review findings warrant a fix"

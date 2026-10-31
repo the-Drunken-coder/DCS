@@ -7,7 +7,7 @@ package. Its root [`plugin.json`](plugin.json) declares the portable format, and
 skills from `skills/` by convention. There is intentionally no legacy client-specific plugin
 manifest.
 
-The package contains nine maintainer-owned skills:
+The package contains eleven maintainer-owned skills:
 
 - `file-pr` opens a focused pull request for the current branch.
 - `babysit-pr` monitors an existing pull request through reviews and CI.
@@ -17,21 +17,18 @@ The package contains nine maintainer-owned skills:
 - `ask-others` delegates to one GPT-5.6 Luna low coordinator, which invokes those three skills and returns their full reviews unchanged.
 - `chatgpt-pr-review` runs an explicit ChatGPT Pro review, waits for its final response, and applies locally verified findings.
 - `wait` pauses for work that may need more time and checks again when useful.
+- `investigate` checks whether supplied review findings are real and worth fixing, with evidence and explicit deferral decisions.
+- `detective` runs Investigate in a fresh subagent per review comment, reconciles results, and applies verified fixes when requested.
 - `review-to-problems` investigates review findings with one subagent per issue and writes checked repository-native problem reports.
 
-It also tracks selected public skills:
+It also tracks two public skills:
 
 - `anti-ui-slop` helps agents build product-specific interfaces and check them for generic UI defaults.
 - `architecture-map` builds an interactive isometric map from measured repository structure and authored call paths.
-- `codebase-design` provides the shared vocabulary and principles for deep-module design.
-- `deslop` removes AI-generated code slop. DCS tracks the skill from Cursor's public `cursor/plugins` repository.
-- `grill-with-docs` stress-tests a plan or design while sharpening its domain language and recording durable decisions. DCS also packages the `grilling` and `domain-modeling` skills it composes.
-- `improve-codebase-architecture` finds architectural deepening opportunities, presents them visually, and grills the selected direction.
-- `pstack` provides one explicit, evidence-first engineering workflow distilled from Lauren Tan's pstack principles, quality rubric, and core playbooks.
-- `thermo-nuclear-review` performs a strict correctness and security branch audit.
-- `thermo-nuclear-code-quality-review` performs a strict maintainability and structure audit.
-- `thermos` runs both Thermo-Nuclear reviews concurrently and synthesizes the results.
-- `unslop` mirrors P-Stack's writing cleanup skill, removing common AI tells while preserving meaning and intended tone.
+
+DCS complements separately installed Matt Pocock and pstack packages. It no longer bundles
+their skills or compatibility ports. The former Cursor Team Kit `deslop` import is also
+removed because pstack supplies the same instructions.
 
 The CLI review skills require the corresponding `claude`, `agy`, or `grok` CLI installed and signed in. Antigravity and Grok use their own Python runners; Ask Others only delegates to the individual skills. Review inputs stay in a fixed snapshot, and raw responses remain available alongside the unchanged full reviews.
 
@@ -41,7 +38,16 @@ Future skills belong in `skills/` and should be added only when they earn their 
 
 [`upstreams.json`](upstreams.json) is the complete administration file for third-party skills. Each entry names a public Git repository, a ref, the source directory, and its destination under `skills/`.
 
-Most skill instructions are exact mirrors. Packaging adds a `DCS:` prefix to every Codex display name so its origin stays visible in skill lists. Adapted skills can also name a small adapter, patch, or file overlay under `ports/`. The `anti-ui-slop` adapter packages the last self-contained skill while upstream references runtime scripts that its source directory does not include. It fails when that upstream assumption changes so the port can be reviewed and removed. The pstack adapter tracks the complete upstream plugin but packages one Codex-native `pstack` skill instead of its Cursor-specific skill stack, agents, model router, and automations. It verifies pstack's identity and main router before packaging the port. The `grill-with-docs` port preserves manual invocation while replacing its generic Skill-tool handoff with Codex instructions. The Thermos ports remove Cursor-only invocation metadata, replace Cursor's subagent syntax with Codex instructions, and add Codex UI metadata. The Matt Pocock skills bundle their upstream MIT notice, while the architecture orchestrator drops a redundant legacy manual-invocation field and loads its bundled dependencies through Codex-native skill instructions. [`upstreams.lock.json`](upstreams.lock.json) records each adapted upstream Git tree, so a change remains visible even when an adapter produces identical packaged output. Its `managedSkills` list tracks every generated skill so removing a registry entry also removes its packaged directory.
+`architecture-map` mirrors its upstream instructions. Packaging adds a `DCS:` prefix to every
+Codex display name so its origin stays visible in skill lists. Adapted skills can also name a
+small adapter, patch, or file overlay under `ports/`.
+
+The `anti-ui-slop` adapter packages the last self-contained skill while upstream references
+runtime scripts that its source directory does not include. It fails when that assumption
+changes so the port can be reviewed and removed. [`upstreams.lock.json`](upstreams.lock.json)
+records its upstream Git tree, so a change remains visible even when the adapter produces
+identical packaged output. The lock's `managedSkills` list tracks every generated skill so
+removing a registry entry also removes its packaged directory.
 
 Install the synchronizer's YAML dependency once:
 

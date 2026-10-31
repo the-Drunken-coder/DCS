@@ -1,0 +1,3 @@
+interface:
+  display_name: "DCS: Detective"
+  short_description: "Investigate review comments in fresh parallel contexts"

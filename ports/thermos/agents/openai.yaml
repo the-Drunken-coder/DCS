@@ -1,6 +1,0 @@
-interface:
-  display_name: "DCS: Thermos"
-  short_description: "Run two deep branch reviews in parallel"
-  default_prompt: "Use $thermos to run parallel correctness and maintainability reviews of this branch."
-policy:
-  allow_implicit_invocation: false

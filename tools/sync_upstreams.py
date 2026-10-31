@@ -56,8 +56,7 @@ SKILL_FIELDS = {
 MAX_SKILL_NAME_LENGTH = 64
 DCS_DISPLAY_PREFIX = "DCS: "
 ANTI_UI_SLOP_ADAPTER = "anti-ui-slop-standalone"
-PSTACK_ADAPTER = "pstack-single-skill"
-SUPPORTED_ADAPTERS = {"cursor-manual-only", ANTI_UI_SLOP_ADAPTER, PSTACK_ADAPTER}
+SUPPORTED_ADAPTERS = {ANTI_UI_SLOP_ADAPTER}
 
 
 class SyncError(RuntimeError):
@@ -166,18 +165,6 @@ def load_registry(path: Path) -> list[Upstream]:
                 f"{label} anti-ui-slop adapter must use "
                 "uizze/uizze@main:skills/anti-ui-slop -> "
                 "skills/anti-ui-slop with ports/anti-ui-slop"
-            )
-        if adapter == PSTACK_ADAPTER and (
-            name != "pstack"
-            or repository != "cursor/plugins"
-            or ref != "main"
-            or source_path != PurePosixPath("pstack")
-            or overlay != PurePosixPath("ports/pstack")
-            or patch is not None
-        ):
-            raise SyncError(
-                f"{label} pstack adapter must use cursor/plugins@main:pstack -> "
-                "skills/pstack with ports/pstack"
             )
         if name in names:
             raise SyncError(f"{label}.name is duplicated")
@@ -462,29 +449,6 @@ def apply_dcs_display_name(directory: Path, skill_name: str) -> None:
     path.write_bytes(contents.encode("utf-8"))
 
 
-def validate_pstack_source(directory: Path) -> None:
-    manifest_path = directory / ".cursor-plugin" / "plugin.json"
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise SyncError(f"cannot read pstack manifest: {error}") from error
-    if not isinstance(manifest, dict):
-        raise SyncError("pstack manifest must contain an object")
-    if manifest.get("name") != "pstack" or manifest.get("license") != "MIT":
-        raise SyncError("pstack source must retain its named MIT plugin manifest")
-
-    mode = directory / "skills" / "poteto-mode" / "SKILL.md"
-    try:
-        mode_contents = mode.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as error:
-        raise SyncError(f"cannot read pstack poteto-mode: {error}") from error
-    if not all(
-        marker in mode_contents
-        for marker in ("disable-model-invocation: true", "## Principles", "## Playbooks")
-    ):
-        raise SyncError("pstack poteto-mode entry point changed; review the single-skill port")
-
-
 def validate_anti_ui_slop_source(directory: Path) -> None:
     skill_file = directory / "SKILL.md"
     try:
@@ -535,12 +499,9 @@ def checkout(
     ):
         raise SyncError(f"{upstream.source} is not a safe directory")
     reject_symlinks(source)
-    if upstream.adapter == PSTACK_ADAPTER:
-        validate_pstack_source(source)
-    else:
-        validate_skill(source, upstream.name, strict=False)
-        if upstream.adapter == ANTI_UI_SLOP_ADAPTER:
-            validate_anti_ui_slop_source(source)
+    validate_skill(source, upstream.name, strict=False)
+    if upstream.adapter == ANTI_UI_SLOP_ADAPTER:
+        validate_anti_ui_slop_source(source)
     tree = git("rev-parse", f"HEAD:{upstream.path}", cwd=checkout_root)
     return source, commit, tree
 
@@ -559,30 +520,11 @@ def apply_port_patch(candidate: Path, patch: Path) -> None:
 
 
 def adapt_candidate(upstream: Upstream, source: Path, candidate: Path) -> None:
-    if upstream.adapter == PSTACK_ADAPTER:
-        validate_pstack_source(source)
-        candidate.mkdir()
-    elif upstream.adapter == ANTI_UI_SLOP_ADAPTER:
+    if upstream.adapter == ANTI_UI_SLOP_ADAPTER:
         validate_anti_ui_slop_source(source)
         candidate.mkdir()
     else:
         shutil.copytree(source, candidate)
-    if upstream.adapter == "cursor-manual-only":
-        skill_file = candidate / "SKILL.md"
-        lines = skill_file.read_text(encoding="utf-8").splitlines(keepends=True)
-        try:
-            frontmatter_end = next(index for index, line in enumerate(lines[1:], 1) if line.strip() == "---")
-        except StopIteration as error:
-            raise SyncError(f"{upstream.source} has unterminated YAML frontmatter") from error
-        marker = [
-            index
-            for index, line in enumerate(lines[1:frontmatter_end], 1)
-            if line.strip() == "disable-model-invocation: true"
-        ]
-        if len(marker) != 1:
-            raise SyncError(f"{upstream.source} must contain one disable-model-invocation: true marker")
-        del lines[marker[0]]
-        skill_file.write_text("".join(lines), encoding="utf-8")
     if upstream.patch:
         patch = ROOT.joinpath(*upstream.patch.parts).resolve()
         if not patch.is_file() or not patch.is_relative_to(ROOT.resolve()):

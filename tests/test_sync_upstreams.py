@@ -38,20 +38,18 @@ class PortAdapterTests(unittest.TestCase):
             ref="main",
             path=PurePosixPath("skills/example"),
             destination=PurePosixPath("skills/example"),
-            adapter="cursor-manual-only",
+            adapter=None,
             overlay=PurePosixPath("ports/example"),
             patch=PurePosixPath("ports/example.patch"),
         )
 
-    def write_source(self, marker: bool = True) -> Path:
+    def write_source(self) -> Path:
         source = self.root / "source"
         source.mkdir()
-        invocation = "disable-model-invocation: true\n" if marker else ""
         (source / "SKILL.md").write_text(
             "---\n"
             "name: example\n"
             "description: Example skill.\n"
-            f"{invocation}"
             "---\n\n"
             "# Example\n\n"
             "Original instructions.\n",
@@ -81,46 +79,6 @@ class PortAdapterTests(unittest.TestCase):
             "+Codex instructions.\n",
             encoding="utf-8",
         )
-
-    def pstack_upstream(self) -> sync.Upstream:
-        return sync.Upstream(
-            name="pstack",
-            repository="cursor/plugins",
-            ref="main",
-            path=PurePosixPath("pstack"),
-            destination=PurePosixPath("skills/pstack"),
-            adapter=sync.PSTACK_ADAPTER,
-            overlay=PurePosixPath("ports/pstack"),
-            patch=None,
-        )
-
-    def write_pstack_source(self) -> Path:
-        source = self.root / "pstack-source"
-        manifest = source / ".cursor-plugin" / "plugin.json"
-        manifest.parent.mkdir(parents=True)
-        manifest.write_text('{"name":"pstack","license":"MIT"}', encoding="utf-8")
-
-        mode = source / "skills" / "poteto-mode" / "SKILL.md"
-        mode.parent.mkdir(parents=True)
-        mode.write_text(
-            "---\nname: Poteto Mode\ndescription: Original.\n"
-            "disable-model-invocation: true\n---\n\n"
-            "## Principles\n\n## Playbooks\n",
-            encoding="utf-8",
-        )
-        return source
-
-    def write_pstack_port(self) -> None:
-        port = self.root / "ports" / "pstack"
-        port.mkdir(parents=True)
-        (port / "SKILL.md").write_text(
-            "---\nname: pstack\ndescription: Codex port.\n---\n",
-            encoding="utf-8",
-        )
-        references = port / "references"
-        references.mkdir()
-        for name in ("principles.md", "processes.md"):
-            (references / name).write_text(f"# {name}\n", encoding="utf-8")
 
     def anti_ui_slop_upstream(self) -> sync.Upstream:
         return sync.Upstream(
@@ -154,7 +112,7 @@ class PortAdapterTests(unittest.TestCase):
         )
         write_packaged_agent_manifest(port)
 
-    def test_adapter_removes_cursor_metadata_and_applies_port(self) -> None:
+    def test_patch_and_overlay_apply_to_mirrored_skill(self) -> None:
         source = self.write_source()
         self.write_port()
         candidate = self.root / "candidate"
@@ -162,7 +120,6 @@ class PortAdapterTests(unittest.TestCase):
         sync.adapt_candidate(self.upstream(), source, candidate)
 
         skill = (candidate / "SKILL.md").read_text(encoding="utf-8")
-        self.assertNotIn("disable-model-invocation", skill)
         self.assertIn("Codex instructions.", skill)
         self.assertFalse((candidate / "SKILL.md.orig").exists())
         manifest = yaml.safe_load(
@@ -171,7 +128,7 @@ class PortAdapterTests(unittest.TestCase):
         self.assertEqual(manifest["interface"]["display_name"], "DCS: Example")
 
     def test_exact_mirror_gets_dcs_metadata_when_upstream_has_none(self) -> None:
-        source = self.write_source(marker=False)
+        source = self.write_source()
         agents = source / "agents"
         agents.mkdir()
         (agents / "notes.txt").write_text("Preserve me.\n", encoding="utf-8")
@@ -204,13 +161,6 @@ class PortAdapterTests(unittest.TestCase):
             "Preserve me.\n",
         )
 
-    def test_adapter_fails_when_cursor_metadata_changes(self) -> None:
-        source = self.write_source(marker=False)
-        self.write_port()
-
-        with self.assertRaisesRegex(sync.SyncError, "must contain one"):
-            sync.adapt_candidate(self.upstream(), source, self.root / "candidate")
-
     def test_overlay_fails_when_upstream_adds_the_same_file(self) -> None:
         source = self.write_source()
         self.write_port()
@@ -220,59 +170,6 @@ class PortAdapterTests(unittest.TestCase):
 
         with self.assertRaisesRegex(sync.SyncError, "overlay collides"):
             sync.adapt_candidate(self.upstream(), source, self.root / "candidate")
-
-    def test_pstack_adapter_packages_only_the_single_skill_port(self) -> None:
-        source = self.write_pstack_source()
-        self.write_pstack_port()
-        candidate = self.root / "candidate"
-
-        sync.adapt_candidate(self.pstack_upstream(), source, candidate)
-
-        port = self.root / "ports" / "pstack"
-        for relative in (
-            "SKILL.md",
-            "references/principles.md",
-            "references/processes.md",
-        ):
-            with self.subTest(relative=relative):
-                self.assertEqual(
-                    (candidate / relative).read_bytes(),
-                    (port / relative).read_bytes(),
-                )
-        self.assertFalse((candidate / ".cursor-plugin").exists())
-        self.assertFalse((candidate / "skills").exists())
-
-    def test_pstack_adapter_fails_when_upstream_entry_point_changes(self) -> None:
-        source = self.write_pstack_source()
-        self.write_pstack_port()
-        mode = source / "skills" / "poteto-mode" / "SKILL.md"
-        mode.write_text(mode.read_text(encoding="utf-8").replace("## Principles", "## Values"))
-
-        with self.assertRaisesRegex(sync.SyncError, "entry point changed"):
-            sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
-
-    def test_pstack_adapter_rejects_non_object_manifest(self) -> None:
-        source = self.write_pstack_source()
-        self.write_pstack_port()
-        (source / ".cursor-plugin" / "plugin.json").write_text("[]", encoding="utf-8")
-
-        with self.assertRaisesRegex(sync.SyncError, "manifest must contain an object"):
-            sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
-
-    def test_pstack_adapter_wraps_invalid_utf8(self) -> None:
-        source = self.write_pstack_source()
-        self.write_pstack_port()
-        manifest = source / ".cursor-plugin" / "plugin.json"
-        original_manifest = manifest.read_bytes()
-        manifest.write_bytes(b"\xff")
-
-        with self.assertRaisesRegex(sync.SyncError, "cannot read pstack manifest"):
-            sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
-
-        manifest.write_bytes(original_manifest)
-        (source / "skills" / "poteto-mode" / "SKILL.md").write_bytes(b"\xff")
-        with self.assertRaisesRegex(sync.SyncError, "cannot read pstack poteto-mode"):
-            sync.adapt_candidate(self.pstack_upstream(), source, self.root / "candidate")
 
     def test_anti_ui_slop_adapter_packages_only_the_standalone_port(self) -> None:
         source = self.write_anti_ui_slop_source()
@@ -298,7 +195,7 @@ class PortAdapterTests(unittest.TestCase):
             )
 
     def test_exact_mirror_rejects_invalid_agent_manifest_before_install(self) -> None:
-        source = self.write_source(marker=False)
+        source = self.write_source()
         agents = source / "agents"
         agents.mkdir()
         (agents / "openai.yaml").write_text(
@@ -319,7 +216,7 @@ class PortAdapterTests(unittest.TestCase):
             sync.adapt_candidate(upstream, source, self.root / "candidate")
 
     def test_exact_mirror_accepts_candidate_icon(self) -> None:
-        source = self.write_source(marker=False)
+        source = self.write_source()
         assets = source / "assets"
         assets.mkdir()
         (assets / "icon.svg").write_text("<svg/>\n", encoding="utf-8")
@@ -349,7 +246,7 @@ class PortAdapterTests(unittest.TestCase):
         self.assertTrue((candidate / "assets" / "icon.svg").is_file())
 
     def test_exact_mirror_updates_flow_style_agent_manifest(self) -> None:
-        source = self.write_source(marker=False)
+        source = self.write_source()
         agents = source / "agents"
         agents.mkdir()
         (agents / "openai.yaml").write_text(
@@ -377,7 +274,7 @@ class PortAdapterTests(unittest.TestCase):
         self.assertEqual(manifest["interface"]["display_name"], "DCS: Example")
 
     def test_exact_mirror_preserves_crlf_agent_manifest(self) -> None:
-        source = self.write_source(marker=False)
+        source = self.write_source()
         agents = source / "agents"
         agents.mkdir()
         manifest = (
@@ -406,7 +303,7 @@ class PortAdapterTests(unittest.TestCase):
         )
 
     def test_exact_mirror_preserves_anchored_display_name(self) -> None:
-        source = self.write_source(marker=False)
+        source = self.write_source()
         agents = source / "agents"
         agents.mkdir()
         (agents / "openai.yaml").write_text(
@@ -438,7 +335,7 @@ class PortAdapterTests(unittest.TestCase):
         self.assertEqual(manifest["interface"]["default_prompt"], "DCS: Example")
 
     def test_exact_mirror_updates_block_scalar_agent_manifest(self) -> None:
-        source = self.write_source(marker=False)
+        source = self.write_source()
         agents = source / "agents"
         agents.mkdir()
         (agents / "openai.yaml").write_text(
@@ -487,20 +384,6 @@ class RegistryTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "adapter is not supported"):
                 sync.load_registry(registry)
 
-    def test_pstack_adapter_requires_the_narrow_port_shape(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            registry = Path(temporary_directory) / "upstreams.json"
-            registry.write_text(
-                '{"schemaVersion":1,"skills":[{"name":"pstack",'
-                '"repository":"cursor/plugins","ref":"main",'
-                '"path":"pstack/skills/poteto-mode","destination":"skills/pstack",'
-                '"adapter":"pstack-single-skill","overlay":"ports/pstack"}]}',
-                encoding="utf-8",
-            )
-
-            with self.assertRaisesRegex(sync.SyncError, "pstack adapter must use"):
-                sync.load_registry(registry)
-
     def test_anti_ui_slop_adapter_requires_the_narrow_port_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             registry = Path(temporary_directory) / "upstreams.json"
@@ -514,25 +397,6 @@ class RegistryTests(unittest.TestCase):
 
             with self.assertRaisesRegex(sync.SyncError, "anti-ui-slop adapter must use"):
                 sync.load_registry(registry)
-
-    def test_pstack_adapter_requires_the_registered_upstream(self) -> None:
-        invalid_upstreams = (("lookalike/plugins", "main"), ("cursor/plugins", "release"))
-        for repository, ref in invalid_upstreams:
-            with (
-                self.subTest(repository=repository, ref=ref),
-                tempfile.TemporaryDirectory() as temporary_directory,
-            ):
-                registry = Path(temporary_directory) / "upstreams.json"
-                registry.write_text(
-                    '{"schemaVersion":1,"skills":[{"name":"pstack",'
-                    f'"repository":"{repository}","ref":"{ref}",'
-                    '"path":"pstack","destination":"skills/pstack",'
-                    '"adapter":"pstack-single-skill","overlay":"ports/pstack"}]}',
-                    encoding="utf-8",
-                )
-
-                with self.assertRaisesRegex(sync.SyncError, "pstack adapter must use"):
-                    sync.load_registry(registry)
 
     def test_plugin_validation_requires_registered_skill_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -889,40 +753,9 @@ class PortPolicyTests(unittest.TestCase):
                 self.assertTrue(display_name.startswith(sync.DCS_DISPLAY_PREFIX))
                 self.assertTrue(display_name[len(sync.DCS_DISPLAY_PREFIX) :].strip())
 
-    def test_grill_with_docs_is_explicit_only(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        manifest = root / "skills" / "grill-with-docs" / "agents" / "openai.yaml"
-        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-        self.assertIs(payload["policy"]["allow_implicit_invocation"], False)
-
     def test_chatgpt_pr_review_is_explicit_only(self) -> None:
         root = Path(__file__).resolve().parents[1]
         manifest = root / "skills" / "chatgpt-pr-review" / "agents" / "openai.yaml"
-        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-        self.assertIs(payload["policy"]["allow_implicit_invocation"], False)
-
-    def test_architecture_orchestrator_uses_codex_native_skill_instructions(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        skill = (root / "skills" / "improve-codebase-architecture" / "SKILL.md").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertNotIn("Skill tool", skill)
-        for name in ("codebase-design", "domain-modeling", "grilling"):
-            with self.subTest(name=name):
-                self.assertIn(f"bundled `{name}` skill", skill)
-
-    def test_all_thermos_ports_are_explicit_only(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        for name in ("thermo-nuclear-code-quality-review", "thermo-nuclear-review", "thermos"):
-            with self.subTest(name=name):
-                manifest = root / "ports" / name / "agents" / "openai.yaml"
-                payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-                self.assertIs(payload["policy"]["allow_implicit_invocation"], False)
-
-    def test_pstack_port_is_explicit_only(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        manifest = root / "ports" / "pstack" / "agents" / "openai.yaml"
         payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
         self.assertIs(payload["policy"]["allow_implicit_invocation"], False)
 
@@ -956,20 +789,18 @@ class LockTests(unittest.TestCase):
             destination = root / "skills" / "example"
             source.mkdir()
             destination.mkdir(parents=True)
-            source_skill = (
-                "---\nname: example\ndescription: Example skill.\n"
-                "disable-model-invocation: true\n---\n"
-            )
-            packaged_skill = "---\nname: example\ndescription: Example skill.\n---\n"
-            (source / "SKILL.md").write_text(source_skill, encoding="utf-8")
-            (destination / "SKILL.md").write_text(packaged_skill, encoding="utf-8")
+            skill = "---\nname: example\ndescription: Example skill.\n---\n"
+            (source / "SKILL.md").write_text(skill, encoding="utf-8")
+            (destination / "SKILL.md").write_text(skill, encoding="utf-8")
             write_packaged_agent_manifest(destination)
+            overlay = root / "ports" / "example"
+            overlay.mkdir(parents=True)
             registry = root / "upstreams.json"
             registry.write_text(
                 '{"schemaVersion":1,"skills":[{"name":"example",'
                 '"repository":"owner/repository","ref":"main",'
                 '"path":"skills/example","destination":"skills/example",'
-                '"adapter":"cursor-manual-only"}]}',
+                '"overlay":"ports/example"}]}',
                 encoding="utf-8",
             )
             lock = root / "upstreams.lock.json"
@@ -1106,18 +937,16 @@ class LockTests(unittest.TestCase):
             destination.mkdir(parents=True)
             old_skill = "---\nname: example\ndescription: Old skill.\n---\n"
             new_skill = "---\nname: example\ndescription: New skill.\n---\n"
-            upstream_skill = (
-                "---\nname: example\ndescription: New skill.\n"
-                "disable-model-invocation: true\n---\n"
-            )
-            (source / "SKILL.md").write_text(upstream_skill, encoding="utf-8")
+            (source / "SKILL.md").write_text(new_skill, encoding="utf-8")
             (destination / "SKILL.md").write_text(old_skill, encoding="utf-8")
+            overlay = root / "ports" / "example"
+            overlay.mkdir(parents=True)
             registry = root / "upstreams.json"
             registry.write_text(
                 '{"schemaVersion":1,"skills":[{"name":"example",'
                 '"repository":"owner/repository","ref":"main",'
                 '"path":"skills/example","destination":"skills/example",'
-                '"adapter":"cursor-manual-only"}]}',
+                '"overlay":"ports/example"}]}',
                 encoding="utf-8",
             )
             lock = root / "upstreams.lock.json"
