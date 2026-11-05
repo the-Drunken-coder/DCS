@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Task list workflow fixture</title>
+<style>
+  body { font: 18px system-ui; max-width: 640px; margin: 48px auto; padding: 24px; }
+  label { display: block; margin-bottom: 8px; }
+  input, button { font: inherit; padding: 10px; }
+  button { background: #1849a9; color: white; border: 1px solid #123f96; }
+  li { margin: 16px 0; }
+</style>
+<h1>Tasks</h1>
+<form>
+  <label for="task">Task</label>
+  <input id="task" required>
+  <button>Add task</button>
+</form>
+<ul id="tasks"></ul>
+<p id="status" role="status">Ready</p>
+<script>
+  const task = document.querySelector('#task');
+  const tasks = document.querySelector('#tasks');
+  const status = document.querySelector('#status');
+  document.querySelector('form').addEventListener('submit', event => {
+    event.preventDefault();
+    if (new URLSearchParams(location.search).has('broken')) return;
+    const item = document.createElement('li');
+    item.textContent = task.value;
+    tasks.append(item);
+    status.textContent = 'Task added';
+    task.value = '';
+  });
+  if (new URLSearchParams(location.search).has('verify')) {
+    task.value = 'Review the proposed UI change';
+    document.querySelector('button').click();
+    document.body.dataset.workflow = tasks.firstElementChild?.textContent === 'Review the proposed UI change'
+      && status.textContent === 'Task added' ? 'passed' : 'failed';
+  }
+</script>
+</html>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DCS: UI Hill Climb"
+  short_description: "Iterate real UI with fresh visual review panels"
+  default_prompt: "Use $ui-hillclimb to improve this UI with fixed screenshots, independent reviewers, and bounded rounds."

@@ -7,7 +7,7 @@ package. Its root [`plugin.json`](plugin.json) declares the portable format, and
 skills from `skills/` by convention. There is intentionally no legacy client-specific plugin
 manifest.
 
-The package contains eleven maintainer-owned skills:
+The package contains thirteen maintainer-owned skills:
 
 - `file-pr` opens a focused pull request for the current branch.
 - `babysit-pr` monitors an existing pull request through reviews and CI.
@@ -20,6 +20,8 @@ The package contains eleven maintainer-owned skills:
 - `investigate` checks whether supplied review findings are real and worth fixing, with evidence and explicit deferral decisions.
 - `detective` runs Investigate in a fresh subagent per review comment, reconciles results, and applies verified fixes when requested.
 - `review-to-problems` investigates review findings with one subagent per issue and writes checked repository-native problem reports.
+- `ui-hillclimb` improves an existing UI through bounded screenshot, independent-review, fix, and workflow-check rounds.
+- `ui-design-judge` gives read-only visual critiques, scenario scores, and optional direct preferences between anonymous variants.
 
 It also tracks two public skills:
 
@@ -33,6 +35,8 @@ removed because pstack supplies the same instructions.
 The CLI review skills require the corresponding `claude`, `agy`, or `grok` CLI installed and signed in. Antigravity and Grok use their own Python runners; Ask Others only delegates to the individual skills. Review inputs stay in a fixed snapshot, and raw responses remain available alongside the unchanged full reviews.
 
 Future skills belong in `skills/` and should be added only when they earn their place.
+
+The UI loop follows Theo's screenshot/council experiment with fixed comparison images, anonymous per-reviewer copies, persisted budgets, and fresh final confirmation. It uses the project's existing capture and browser tools; its helpers require only Python's standard library. Repository tests include a real Chrome/Chromium workflow fixture with synthetic review intake. That test is skipped when no browser is available; set `UI_HILLCLIMB_BROWSER` to its executable path when needed. The process is tested, but model ratings are not a benchmark of design quality.
 
 ## Upstream skills
 

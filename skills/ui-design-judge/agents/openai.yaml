@@ -1,0 +1,4 @@
+interface:
+  display_name: "DCS: UI Design Judge"
+  short_description: "Independently critique rendered UI evidence"
+  default_prompt: "Use $ui-design-judge to review this screenshot set against the product brief and return evidence-backed scores."
